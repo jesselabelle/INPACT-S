@@ -40,8 +40,8 @@ global RAW      "$DATA/raw/D$DATA_VERSION"
 * e.g. data/intermediate/D1_C0/, data/final/D1_C0/
 * ------------------------------------------------
 global EXTERNAL "$DATA/external"
-global INTER    "$DATA/intermediate/D$DATA_VERSION_C$CODE_VERSION"
-global FINAL    "$DATA/final/D$DATA_VERSION_C$CODE_VERSION"
+global INTER    "$DATA/intermediate/D${DATA_VERSION}_C${CODE_VERSION}"
+global FINAL    "$DATA/final/D${DATA_VERSION}_C${CODE_VERSION}"
 
 * ------------------------------------------------
 * Create versioned output dirs if they don't exist
