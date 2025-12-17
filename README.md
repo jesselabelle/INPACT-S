@@ -6,6 +6,9 @@ Jesse LaBelle, Inmaculada Martínez-Zarzoso, Ana Maria Santacreu, and Yoto Yotov
 ### Paper Citation
 LaBelle, Jesse and Martinez-Zarzoso, Inmaculada and Santacreu, Ana Maria Maria and Yotov, Yoto, Cross-Border Patenting, Globalization, and Development (2023). CESifo Working Paper No. 10850, Available at SSRN: https://ssrn.com/abstract=4676768 or http://dx.doi.org/10.2139/ssrn.4676768
 
+### Dataset Access
+https://sites.google.com/uji.es/inma-martinez-zarzoso/home/datasets
+
 ---
 
 ## 1. Overview
