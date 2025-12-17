@@ -35,25 +35,46 @@
   AL,AT,AU,BE,BG,BR,CA,CH,CL,CN,CY,CZ,DE,DK,EE,EP,ES,FI,FR,GB,GR,HR, HU,IB,IE,IL,IN,IS,IT,JP,KR,LT,LU,LV,MK,MT,MX,NL,NO,NZ,PL,PT,RO,RS,RU,SE,SI,SK,SM,TR,US,ZA.
  
 ******************************************************************************************/
- 
+
+
+-- 1. Create the output folder (Windows command)
+--    The '2>NUL' part hides the error if the folder already exists.
+\! mkdir "data\sql_output\imputed" 2>NUL
+
+SET search_path TO :patstat_schema, public;
+
+-- 2. Performance Optimization (Tuned for 16GB RAM)
+--    'work_mem': Controls speed of sorting/distinct. 1GB is safe for single-user on 16GB RAM.
+--    'maintenance_work_mem': Controls speed of creating indexes.
+SET work_mem = '1GB';
+SET maintenance_work_mem = '2GB';
+
+
 /*
   CREATE ALL TABLES NEEDED
 */
- 
+
+
+\echo '----------------------------------------------------------------------------------------------------------------------'
+\echo 'CREATING po (TABLE 1/27) ...'
+\echo '----------------------------------------------------------------------------------------------------------------------' 
  
 -- table containing the patent offices to browse
 DROP TABLE IF EXISTS po;
-CREATE TABLE po (
+CREATE UNLOGGED TABLE po (
 patent_office CHAR(2) DEFAULT NULL
-) ; COMMENT ON TABLE po IS 'List of patent offices to browse';
+) ; 
 INSERT INTO po VALUES ('AL'), ('AT'), ('AU'), ('BE'), ('BG'),('BR'), ('CA'), ('CH'), ('CL'), ('CN'),('CY'), ('CZ'), ('DE'), ('DK'), ('EE'), ('EP'), ('ES'), ('FI'), ('FR'), ('GB'), ('GR'), ('HR'), ('HU'),('IB'), ('IE'), ('IL'), ('IN'), ('IS'), ('IT'), ('JP'), ('KR'), ('LT'), ('LU'), ('LV'), ('MK'), ('MT'), ('MX'), ('NL'), ('NO'), ('NZ'), ('PL'), ('PT'), ('RO'), ('RS'), ('RU'), ('SE'), ('SI'), ('SK'), ('SM'), ('TR'), ('US'), ('ZA');
-DROP INDEX IF EXISTS po_idx;
 CREATE INDEX po_idx ON po USING btree (patent_office);
  
 -- table containing the appln_id to exclude from the analysis (e.g. petty patents) for a given patent office
 
+\echo '----------------------------------------------------------------------------------------------------------------------'
+\echo 'CREATING toExclude (TABLE 2/27) ...'
+\echo '----------------------------------------------------------------------------------------------------------------------' 
+ 
 DROP TABLE IF EXISTS toExclude;
-CREATE TABLE toExclude AS
+CREATE UNLOGGED TABLE toExclude AS
 SELECT DISTINCT appln_id, publn_auth, publn_kind FROM tls211_pat_publn
 WHERE 
 (publn_auth='AU' AND (publn_kind='A3' OR publn_kind='B3' OR publn_kind='B4' OR publn_kind='C1'
@@ -71,15 +92,17 @@ OR
 OR
 (publn_auth='US' AND (publn_kind='E' OR publn_kind='E1' OR publn_kind='H' OR publn_kind='H1' OR publn_kind='I4' 
 OR publn_kind='P' OR publn_kind='P1' OR publn_kind='P2' OR publn_kind='P3' OR publn_kind='S1'))
-;   COMMENT ON TABLE toExclude IS 'Excluded appln_id for a given po based on publn_kind';
- 
-DROP INDEX IF EXISTS exclude_idx;
+;  
 CREATE INDEX exclude_idx ON toExclude USING btree (appln_id);
-
+ 
 -- Table containing the priority filings of a given (patent office, year)
 
+\echo '----------------------------------------------------------------------------------------------------------------------'
+\echo 'CREATING PRIORITY_FILINGS_inv (TABLE 3/27) ...'
+\echo '----------------------------------------------------------------------------------------------------------------------' 
+
 DROP TABLE IF EXISTS PRIORITY_FILINGS_inv;
-CREATE TABLE PRIORITY_FILINGS_inv (
+CREATE UNLOGGED TABLE PRIORITY_FILINGS_inv (
 appln_id INT,
 appln_kind CHAR,
 person_id INT,
@@ -88,154 +111,125 @@ appln_filing_year INT,
 appln_filing_date DATE,
 type TEXT
   );
-
+  
+\echo '----------------------------------------------------------------------------------------------------------------------'
+\echo '-----INSERTING INTO PRIORITY_FILINGS_inv (INSERT 1/9) ...'
+\echo '----------------------------------------------------------------------------------------------------------------------' 
 
 INSERT INTO PRIORITY_FILINGS_inv
 SELECT DISTINCT t1.appln_id, t1.appln_kind, t6.person_id, t1.appln_auth, t1.appln_filing_year, t1.appln_filing_date, 'priority'
 FROM tls201_appln t1 
 JOIN tls204_appln_prior t2 ON t1.appln_id = t2.prior_appln_id
---LEFT OUTER JOIN toExclude t3 ON t1.appln_id = t3.appln_id
---JOIN tls211_pat_publn t4 ON t1.appln_id = t4.appln_id
 JOIN po t5 ON t1.appln_auth = t5.patent_office
 JOIN tls207_pers_appln t6 ON t1.appln_id = t6.appln_id
 WHERE (t1.appln_kind != 'W ')
 AND t1.internat_appln_id = 0
---AND t3.appln_id IS NULL
---AND t4.publn_nr IS NOT NULL 
---AND t4.publn_kind !='D2'
 AND invt_seq_nr > 0
---AND t1.appln_filing_year >=1940 AND t1.appln_filing_year<2020
-;
+AND t1.appln_filing_year >=1939 AND t1.appln_filing_year<:max_imputation_year_excl;
+
+\echo '----------------------------------------------------------------------------------------------------------------------'
+\echo '-----INSERTING INTO PRIORITY_FILINGS_inv (INSERT 2/9) ...'
+\echo '----------------------------------------------------------------------------------------------------------------------' 
 
 INSERT INTO PRIORITY_FILINGS_inv 
 SELECT DISTINCT t1.appln_id, t1.appln_kind, t6.person_id, t1.appln_auth, t1.appln_filing_year, t1.appln_filing_date, 'priority'
 FROM tls201_appln t1 
 JOIN tls204_appln_prior t2 ON t1.appln_id = t2.prior_appln_id
---LEFT OUTER JOIN toExclude t3 ON t1.appln_id = t3.appln_id
---JOIN tls211_pat_publn t4 ON t1.appln_id = t4.appln_id
---JOIN po t5 ON t1.appln_auth = t5.patent_office
-  --newer Patstat versions:
 JOIN po t5 ON t1.receiving_office = t5.patent_office
 JOIN tls207_pers_appln t6 ON t1.appln_id = t6.appln_id
 WHERE (t1.appln_kind = 'W ')
 AND t1.internat_appln_id = 0
---AND t3.appln_id IS NULL
---AND t4.publn_nr IS NOT NULL 
---AND t4.publn_kind !='D2'
 AND invt_seq_nr > 0
---AND t1.appln_filing_year >=1940 AND t1.appln_filing_year<2020
-;
+AND t1.appln_filing_year >=1939 AND t1.appln_filing_year<:max_imputation_year_excl;
 
-
+\echo '----------------------------------------------------------------------------------------------------------------------'
+\echo '-----INSERTING INTO PRIORITY_FILINGS_inv (INSERT 3/9) ...'
+\echo '----------------------------------------------------------------------------------------------------------------------' 
  
 INSERT INTO PRIORITY_FILINGS_inv
 SELECT DISTINCT t1.appln_id, t1.appln_kind, t6.person_id, t1.appln_auth AS patent_office, t1.appln_filing_year, t1.appln_filing_date, 'pct'
 FROM tls201_appln t1 
---LEFT OUTER JOIN toExclude t3 ON t1.appln_id = t3.appln_id
---JOIN tls211_pat_publn t4 ON t1.appln_id = t4.appln_id
---JOIN po t5 ON t1.appln_auth = t5.patent_office
-  --newer Patstat versions:
 JOIN po t5 ON t1.receiving_office = t5.patent_office
 JOIN tls207_pers_appln t6 ON t1.appln_id = t6.appln_id
-
   LEFT OUTER JOIN PRIORITY_FILINGS_inv t7 on t1.appln_id = t7.appln_id 
-
 WHERE (t1.appln_kind = 'W ')
 AND t1.internat_appln_id = 0 and nat_phase = 'N' and reg_phase = 'N'
 AND t1.appln_id = t1.earliest_filing_id
---AND t3.appln_id IS NULL
---AND t4.publn_nr IS NOT NULL 
---AND t4.publn_kind !='D2'
 AND invt_seq_nr > 0
---AND t1.appln_filing_year >=1940 AND t1.appln_filing_year<2020
-AND t7.appln_id is null
-;
+AND t1.appln_filing_year >=1939 AND t1.appln_filing_year<:max_imputation_year_excl
+AND t7.appln_id is null;
 
+\echo '----------------------------------------------------------------------------------------------------------------------'
+\echo '-----INSERTING INTO PRIORITY_FILINGS_inv (INSERT 4/9) ...'
+\echo '----------------------------------------------------------------------------------------------------------------------' 
 
 INSERT INTO PRIORITY_FILINGS_inv
 SELECT DISTINCT t1.appln_id, t1.appln_kind, t6.person_id, t1.appln_auth, t1.appln_filing_year, t1.appln_filing_date, 'continual'
 FROM tls201_appln t1 
 JOIN tls216_appln_contn t2 ON t1.appln_id = t2.parent_appln_id
---LEFT OUTER JOIN toExclude t3 ON t1.appln_id = t3.appln_id
---JOIN tls211_pat_publn t4 ON t1.appln_id = t4.appln_id
 JOIN po t5 ON t1.appln_auth = t5.patent_office
 JOIN tls207_pers_appln t6 ON t1.appln_id = t6.appln_id
-
     LEFT OUTER JOIN PRIORITY_FILINGS_inv t7 on t1.appln_id = t7.appln_id 
-
 WHERE (t1.appln_kind != 'W ')
 AND t1.internat_appln_id = 0
---AND t3.appln_id IS NULL
---AND t4.publn_nr IS NOT NULL 
---AND t4.publn_kind !='D2'
 AND invt_seq_nr > 0
---AND t1.appln_filing_year >=1940 AND t1.appln_filing_year<2020
-AND t7.appln_id is null
-;
+AND t1.appln_filing_year >=1939 AND t1.appln_filing_year<:max_imputation_year_excl
+AND t7.appln_id is null;
+
+\echo '----------------------------------------------------------------------------------------------------------------------'
+\echo '-----INSERTING INTO PRIORITY_FILINGS_inv (INSERT 5/9) ...'
+\echo '----------------------------------------------------------------------------------------------------------------------' 
 
 INSERT INTO PRIORITY_FILINGS_inv
 SELECT DISTINCT t1.appln_id, t1.appln_kind, t6.person_id, t1.appln_auth, t1.appln_filing_year, t1.appln_filing_date, 'continual'
 FROM tls201_appln t1 
 JOIN tls216_appln_contn t2 ON t1.appln_id = t2.parent_appln_id
---LEFT OUTER JOIN toExclude t3 ON t1.appln_id = t3.appln_id
---JOIN tls211_pat_publn t4 ON t1.appln_id = t4.appln_id
---JOIN po t5 ON t1.appln_auth = t5.patent_office
---newer Patstat versions:
 JOIN po t5 ON t1.receiving_office = t5.patent_office
 JOIN tls207_pers_appln t6 ON t1.appln_id = t6.appln_id
       LEFT OUTER JOIN PRIORITY_FILINGS_inv t7 on t1.appln_id = t7.appln_id 
-
 WHERE (t1.appln_kind = 'W ')
 AND t1.internat_appln_id = 0
---AND t3.appln_id IS NULL
---AND t4.publn_nr IS NOT NULL 
---AND t4.publn_kind !='D2'
 AND invt_seq_nr > 0
---AND t1.appln_filing_year >=1940 AND t1.appln_filing_year<2020
-AND t7.appln_id is null
-;
+AND t1.appln_filing_year >=1939 AND t1.appln_filing_year<:max_imputation_year_excl
+AND t7.appln_id is null;
+
+\echo '----------------------------------------------------------------------------------------------------------------------'
+\echo '-----INSERTING INTO PRIORITY_FILINGS_inv (INSERT 6/9) ...'
+\echo '----------------------------------------------------------------------------------------------------------------------' 
 
 INSERT INTO PRIORITY_FILINGS_inv
 SELECT DISTINCT t1.appln_id, t1.appln_kind, t6.person_id, t1.appln_auth, t1.appln_filing_year, t1.appln_filing_date, 'tech_rel'
 FROM tls201_appln t1 
 JOIN tls205_tech_rel t2 ON t1.appln_id = t2.tech_rel_appln_id
---LEFT OUTER JOIN toExclude t3 ON t1.appln_id = t3.appln_id
---JOIN tls211_pat_publn t4 ON t1.appln_id = t4.appln_id
 JOIN po t5 ON t1.appln_auth = t5.patent_office
 JOIN tls207_pers_appln t6 ON t1.appln_id = t6.appln_id
       LEFT OUTER JOIN PRIORITY_FILINGS_inv t7 on t1.appln_id = t7.appln_id 
-
 WHERE (t1.appln_kind != 'W ')
 AND t1.internat_appln_id = 0
---AND t3.appln_id IS NULL
---AND t4.publn_nr IS NOT NULL 
---AND t4.publn_kind !='D2'
 AND invt_seq_nr > 0
---AND t1.appln_filing_year >=1940 AND t1.appln_filing_year<2020
-AND t7.appln_id is null
-;
+AND t1.appln_filing_year >=1939 AND t1.appln_filing_year<:max_imputation_year_excl
+AND t7.appln_id is null;
+
+\echo '----------------------------------------------------------------------------------------------------------------------'
+\echo '-----INSERTING INTO PRIORITY_FILINGS_inv (INSERT 7/9) ...'
+\echo '----------------------------------------------------------------------------------------------------------------------' 
 
 INSERT INTO PRIORITY_FILINGS_inv 
 SELECT DISTINCT t1.appln_id, t1.appln_kind, t6.person_id, t1.appln_auth, t1.appln_filing_year, t1.appln_filing_date, 'tech_rel'
 FROM tls201_appln t1 
 JOIN tls205_tech_rel t2 ON t1.appln_id = t2.tech_rel_appln_id
---LEFT OUTER JOIN toExclude t3 ON t1.appln_id = t3.appln_id
---JOIN tls211_pat_publn t4 ON t1.appln_id = t4.appln_id
---JOIN po t5 ON t1.appln_auth = t5.patent_office
---newer Patstat versions:
 JOIN po t5 ON t1.receiving_office = t5.patent_office
 JOIN tls207_pers_appln t6 ON t1.appln_id = t6.appln_id
       LEFT OUTER JOIN PRIORITY_FILINGS_inv t7 on t1.appln_id = t7.appln_id 
-
 WHERE (t1.appln_kind = 'W ')
 AND t1.internat_appln_id = 0
---AND t3.appln_id IS NULL
---AND t4.publn_nr IS NOT NULL 
---AND t4.publn_kind !='D2'
 AND invt_seq_nr > 0
---AND t1.appln_filing_year >=1940 AND t1.appln_filing_year<2020
-AND t7.appln_id is null
-;
+AND t1.appln_filing_year >=1939 AND t1.appln_filing_year<:max_imputation_year_excl
+AND t7.appln_id is null;
+
+\echo '----------------------------------------------------------------------------------------------------------------------'
+\echo '-----INSERTING INTO PRIORITY_FILINGS_inv (INSERT 8/9) ...'
+\echo '----------------------------------------------------------------------------------------------------------------------' 
 
 -- Singletons
 INSERT INTO PRIORITY_FILINGS_inv
@@ -243,98 +237,107 @@ SELECT DISTINCT t1.appln_id, t1.appln_kind, t6.person_id, t1.appln_auth, t1.appl
 FROM tls201_appln t1 
 JOIN (SELECT docdb_family_id from tls201_appln group by docdb_family_id having count(distinct appln_id) = 1) as t2
 ON t1.docdb_family_id = t2.docdb_family_id
---LEFT OUTER JOIN toExclude t3 ON t1.appln_id = t3.appln_id
---JOIN tls211_pat_publn t4 ON t1.appln_id = t4.appln_id
   JOIN po t5 ON t1.appln_auth = t5.patent_office
 JOIN tls207_pers_appln t6 ON t1.appln_id = t6.appln_id
       LEFT OUTER JOIN PRIORITY_FILINGS_inv t7 on t1.appln_id = t7.appln_id 
-
 WHERE (t1.appln_kind != 'W ')
 AND t1.internat_appln_id = 0
---AND t3.appln_id IS NULL
---AND t4.publn_nr IS NOT NULL 
---AND t4.publn_kind !='D2'
 AND invt_seq_nr > 0
---AND t1.appln_filing_year >=1940 AND t1.appln_filing_year<2020
-AND t7.appln_id is null
-;
+AND t1.appln_filing_year >=1939 AND t1.appln_filing_year<:max_imputation_year_excl
+AND t7.appln_id is null;
+
+\echo '----------------------------------------------------------------------------------------------------------------------'
+\echo '-----INSERTING INTO PRIORITY_FILINGS_inv (INSERT 9/9) ...'
+\echo '----------------------------------------------------------------------------------------------------------------------' 
 
 INSERT INTO PRIORITY_FILINGS_inv 
 SELECT DISTINCT t1.appln_id, t1.appln_kind, t6.person_id, t1.appln_auth, t1.appln_filing_year, t1.appln_filing_date, 'single'
 FROM tls201_appln t1 
 JOIN (SELECT docdb_family_id from tls201_appln group by docdb_family_id having count(distinct appln_id) = 1) as t2
 ON t1.docdb_family_id = t2.docdb_family_id
---LEFT OUTER JOIN toExclude t3 ON t1.appln_id = t3.appln_id
---JOIN tls211_pat_publn t4 ON t1.appln_id = t4.appln_id
---JOIN po t5 ON t1.appln_auth = t5.patent_office
---newer Patstat versions:
 JOIN po t5 ON t1.receiving_office = t5.patent_office
 JOIN tls207_pers_appln t6 ON t1.appln_id = t6.appln_id
       LEFT OUTER JOIN PRIORITY_FILINGS_inv t7 on t1.appln_id = t7.appln_id 
-
 WHERE (t1.appln_kind = 'W ')
 AND t1.internat_appln_id = 0
---AND t3.appln_id IS NULL
---AND t4.publn_nr IS NOT NULL 
---AND t4.publn_kind !='D2'
 AND invt_seq_nr > 0
---AND t1.appln_filing_year >=1940 AND t1.appln_filing_year<2020
-AND t7.appln_id is null
-;
+AND t1.appln_filing_year >=1939 AND t1.appln_filing_year<:max_imputation_year_excl
+AND t7.appln_id is null;
 
-DROP INDEX IF EXISTS pfa_idx, pfa_idx2, pfa_idx3;
-CREATE INDEX pfa_idx ON PRIORITY_FILINGS_inv USING btree (appln_id);
-CREATE INDEX pfa_idx2 ON PRIORITY_FILINGS_inv USING btree (patent_office);
-CREATE INDEX pfa_idx3 ON PRIORITY_FILINGS_inv USING btree (appln_filing_year);
+\echo '----------------------------------------------------------------------------------------------------------------------'
+\echo '-----CREATE PRIORITY_FILINGS_inv INDICES ...'
+\echo '----------------------------------------------------------------------------------------------------------------------' 
+
+CREATE INDEX pfi_idx ON PRIORITY_FILINGS_inv USING btree (appln_id);
+CREATE INDEX pfi_idx2 ON PRIORITY_FILINGS_inv USING btree (patent_office);
+CREATE INDEX pfi_idx3 ON PRIORITY_FILINGS_inv USING btree (appln_filing_year);
+
+-- Optimization: Update stats for this new massive table
+VACUUM ANALYZE PRIORITY_FILINGS_inv;
+
+\echo '----------------------------------------------------------------------------------------------------------------------'
+\echo 'CREATING country_codes_inv (TABLE 4/27) ...'
+\echo '----------------------------------------------------------------------------------------------------------------------' 
  
- 
- 
--- Table containing appln_id, person_id, ctry_code
- 
--- Table containing appln_id, person_id, ctry_code
 DROP TABLE IF EXISTS country_codes_inv;
-CREATE TABLE country_codes_inv AS
+CREATE UNLOGGED TABLE country_codes_inv AS
 SELECT DISTINCT t1.appln_id, t1.person_id, t2.person_ctry_code AS ctry_code 
 FROM tls207_pers_appln t1
 JOIN tls206_person t2 ON t1.person_id = t2.person_id
 WHERE invt_seq_nr > 0;
 
+\echo '----------------------------------------------------------------------------------------------------------------------'
+\echo 'CREATING country_codes_app (TABLE 5/27) ...'
+\echo '----------------------------------------------------------------------------------------------------------------------' 
+
 DROP TABLE IF EXISTS country_codes_app;
-CREATE TABLE country_codes_app AS
+CREATE UNLOGGED TABLE country_codes_app AS
 SELECT DISTINCT t1.appln_id, t1.person_id, t2.person_ctry_code AS ctry_code 
 FROM tls207_pers_appln t1
 JOIN tls206_person t2 ON t1.person_id = t2.person_id
 WHERE applt_seq_nr > 0;
 
-DROP INDEX IF EXISTS country_codes_inv_idx, country_codes_app_idx, country_codes_pers_inv_idx, country_codes_pers_app_idx;
+\echo '----------------------------------------------------------------------------------------------------------------------'
+\echo '-----CREATE country_codes_inv & country_codes_app INDICES ...'
+\echo '----------------------------------------------------------------------------------------------------------------------' 
+
 CREATE INDEX country_codes_inv_idx ON country_codes_inv USING btree (appln_id);
 CREATE INDEX country_codes_app_idx ON country_codes_app USING btree (appln_id);                  
 CREATE INDEX country_codes_pers_inv_idx ON country_codes_inv USING btree (person_id);
 CREATE INDEX country_codes_pers_app_idx ON country_codes_app USING btree (person_id);  
 
  
-/* 
-Create the tables that will be used to impute missing information
+/* Create the tables that will be used to impute missing information
 */
  
--- Inventor information
+\echo '----------------------------------------------------------------------------------------------------------------------'
+\echo 'INVENTOR INFORMATION'
+\echo '----------------------------------------------------------------------------------------------------------------------' 
+
+\echo '----------------------------------------------------------------------------------------------------------------------'
+\echo 'CREATING PRIORITY_FILINGS1 (TABLE 6/27) ...'
+\echo '----------------------------------------------------------------------------------------------------------------------' 
  
 -- A. Information that is directly available (source = 1)
 DROP TABLE IF EXISTS PRIORITY_FILINGS1;
-CREATE TABLE PRIORITY_FILINGS1 AS (
+CREATE UNLOGGED TABLE PRIORITY_FILINGS1 AS (
 -- first of all we need all priority filings with address information in Patstat and country information
 SELECT DISTINCT t1.appln_id, t1.person_id, t1.patent_office, t1.appln_filing_date, t1.appln_filing_year, ctry_code, type
 FROM PRIORITY_FILINGS_inv t1 
 LEFT OUTER JOIN country_codes_inv t2 ON t1.appln_id = t2.appln_id AND t1.person_id = t2.person_id) ;
-DROP INDEX IF EXISTS pri1_idx, pri1_pers_idx, pri1_office_idx, pri1_year;
+
 CREATE INDEX pri1_idx ON PRIORITY_FILINGS1 USING btree (appln_id);
 CREATE INDEX pri1_pers_idx ON PRIORITY_FILINGS1 USING btree (person_id);
 CREATE INDEX pri1_office_idx ON PRIORITY_FILINGS1 USING btree (patent_office);
 CREATE INDEX pri1_year_idx ON PRIORITY_FILINGS1 USING btree (appln_filing_year);
+
+\echo '----------------------------------------------------------------------------------------------------------------------'
+\echo '-----CREATING t (from PRIORITY_FILINGS1) (TABLE 7/27) ...'
+\echo '----------------------------------------------------------------------------------------------------------------------' 
  
 -- B. Prepare a pool of all potential second filings
 DROP TABLE IF EXISTS t;
-CREATE TABLE t AS
+CREATE UNLOGGED TABLE t AS
 SELECT t1.appln_id, t3.appln_id AS subsequent_id, t3.appln_filing_date AS subsequent_date, max(t4.prior_appln_seq_nr) AS nb_priorities
 FROM PRIORITY_FILINGS_inv t1 
 INNER JOIN tls204_appln_prior t2 ON t2.prior_appln_id = t1.appln_id
@@ -344,18 +347,24 @@ WHERE type = 'priority'
 GROUP BY t1.appln_id, t3.appln_id, t3.appln_filing_date ;
 CREATE INDEX t_appln_id ON t(appln_id);  
 
+\echo '----------------------------------------------------------------------------------------------------------------------'
+\echo 'CREATING SUBSEQUENT_FILINGS1 (TABLE 8/27) ...'
+\echo '----------------------------------------------------------------------------------------------------------------------' 
+
 DROP TABLE IF EXISTS SUBSEQUENT_FILINGS1;
-CREATE TABLE SUBSEQUENT_FILINGS1 AS (
+CREATE UNLOGGED TABLE SUBSEQUENT_FILINGS1 AS (
 SELECT DISTINCT t1.appln_id, t.subsequent_id, t2.person_id as subsequent_person_id, applt_seq_nr, invt_seq_nr, t1.patent_office, t1.appln_filing_year, t.subsequent_date, t.nb_priorities, type
 FROM PRIORITY_FILINGS_inv t1 
 JOIN t ON (t1.appln_id = t.appln_id )
 JOIN tls207_pers_appln t2 ON (t.subsequent_id = t2.appln_id)
 ORDER BY t1.appln_id, t.subsequent_date, t2.person_id, applt_seq_nr, invt_seq_nr ASC);
 
-
+\echo '----------------------------------------------------------------------------------------------------------------------'
+\echo '-----CREATING t (from PRIORITY_FILINGS_inv) (TABLE 9/27) ...'
+\echo '----------------------------------------------------------------------------------------------------------------------' 
 
 DROP TABLE t;
-CREATE TABLE t AS
+CREATE UNLOGGED TABLE t AS
 SELECT t1.appln_id, t3.appln_id AS subsequent_id, t3.appln_filing_date AS subsequent_date, max(count) AS nb_priorities
 FROM PRIORITY_FILINGS_inv t1 
 INNER JOIN tls216_appln_contn t2 ON t2.parent_appln_id = t1.appln_id
@@ -365,6 +374,10 @@ WHERE type = 'continual'
 GROUP BY t1.appln_id, t3.appln_id, t3.appln_filing_date ;
 CREATE INDEX t_appln_id ON t(appln_id);      
 
+\echo '----------------------------------------------------------------------------------------------------------------------'
+\echo '-----INSERTING INTO SUBSEQUENT_FILINGS1 (INSERT 1/4) ...'
+\echo '----------------------------------------------------------------------------------------------------------------------' 
+
 INSERT INTO SUBSEQUENT_FILINGS1
 SELECT DISTINCT t1.appln_id, t.subsequent_id, t2.person_id as subsequent_person_id, applt_seq_nr, invt_seq_nr, t1.patent_office, t1.appln_filing_year, t.subsequent_date, t.nb_priorities, type
 FROM PRIORITY_FILINGS_inv t1 
@@ -372,8 +385,12 @@ JOIN t ON (t1.appln_id = t.appln_id )
 JOIN tls207_pers_appln t2 ON (t.subsequent_id = t2.appln_id)
 ORDER BY t1.appln_id, t.subsequent_date, t2.person_id, applt_seq_nr, invt_seq_nr ASC;
 
+\echo '----------------------------------------------------------------------------------------------------------------------'
+\echo '-----CREATING t (from PRIORITY_FILINGS_inv) (TABLE 10/27) ...'
+\echo '----------------------------------------------------------------------------------------------------------------------' 
+
 DROP TABLE t;
-CREATE TABLE t AS
+CREATE UNLOGGED TABLE t AS
 SELECT t1.appln_id, t3.appln_id AS subsequent_id, t3.appln_filing_date AS subsequent_date, max(count) AS nb_priorities
 FROM PRIORITY_FILINGS_inv t1 
 INNER JOIN TLS205_TECH_REL t2 ON t2.tech_rel_appln_id = t1.appln_id
@@ -383,6 +400,10 @@ WHERE type = 'tech_rel'
 GROUP BY t1.appln_id, t3.appln_id, t3.appln_filing_date ;
 CREATE INDEX t_appln_id ON t(appln_id);  
 
+\echo '----------------------------------------------------------------------------------------------------------------------'
+\echo '-----INSERTING INTO SUBSEQUENT_FILINGS1 (INSERT 2/4) ...'
+\echo '----------------------------------------------------------------------------------------------------------------------' 
+
 INSERT INTO SUBSEQUENT_FILINGS1 
 SELECT DISTINCT t1.appln_id, t.subsequent_id, t2.person_id as subsequent_person_id, applt_seq_nr, invt_seq_nr, t1.patent_office, t1.appln_filing_year, t.subsequent_date, t.nb_priorities, type
 FROM PRIORITY_FILINGS_inv t1 
@@ -390,15 +411,23 @@ JOIN t ON (t1.appln_id = t.appln_id )
 JOIN tls207_pers_appln t2 ON (t.subsequent_id = t2.appln_id)
 ORDER BY t1.appln_id, t.subsequent_date, t2.person_id, applt_seq_nr, invt_seq_nr ASC;
 
+\echo '----------------------------------------------------------------------------------------------------------------------'
+\echo '-----CREATING t (from PRIORITY_FILINGS_inv) (TABLE 11/27) ...'
+\echo '----------------------------------------------------------------------------------------------------------------------' 
+
 DROP TABLE t;
-CREATE TABLE t AS
+CREATE UNLOGGED TABLE t AS
 SELECT t1.appln_id, t2.appln_id AS subsequent_id, t2.appln_filing_date AS subsequent_date
 FROM PRIORITY_FILINGS_inv t1 
 INNER JOIN tls201_appln t2 ON t1.appln_id = t2.internat_appln_id
 WHERE type = 'pct'
 AND t2.internat_appln_id != 0 and reg_phase = 'Y'
 GROUP BY t1.appln_id, t2.appln_id, t2.appln_filing_date ;
-CREATE INDEX t_appln_id ON t(appln_id);      
+CREATE INDEX t_appln_id ON t(appln_id);    
+
+\echo '----------------------------------------------------------------------------------------------------------------------'
+\echo '-----INSERTING INTO SUBSEQUENT_FILINGS1 (INSERT 3/4) ...'
+\echo '----------------------------------------------------------------------------------------------------------------------'   
 
 INSERT INTO subsequent_filings1
 SELECT DISTINCT t1.appln_id, t.subsequent_id, t2.person_id as subsequent_person_id, applt_seq_nr, invt_seq_nr, t1.patent_office, t1.appln_filing_year, t.subsequent_date, 1, type
@@ -407,8 +436,12 @@ JOIN t ON (t1.appln_id = t.appln_id )
 JOIN tls207_pers_appln t2 ON (t.subsequent_id = t2.appln_id)
 ORDER BY t1.appln_id, t.subsequent_date, t2.person_id, applt_seq_nr, invt_seq_nr ASC;
 
+\echo '----------------------------------------------------------------------------------------------------------------------'
+\echo '-----CREATING t (from PRIORITY_FILINGS_inv) (TABLE 12/27) ...'
+\echo '----------------------------------------------------------------------------------------------------------------------' 
+
 DROP TABLE t;
-CREATE TABLE t AS
+CREATE UNLOGGED TABLE t AS
 SELECT t1.appln_id, t2.appln_id AS subsequent_id, t2.appln_filing_date AS subsequent_date
 FROM PRIORITY_FILINGS_inv t1 
 INNER JOIN tls201_appln t2 ON t1.appln_id = t2.internat_appln_id
@@ -417,6 +450,10 @@ AND t2.internat_appln_id != 0 and nat_phase = 'Y'
 GROUP BY t1.appln_id, t2.appln_id, t2.appln_filing_date ;
 CREATE INDEX t_appln_id ON t(appln_id);      
 
+\echo '----------------------------------------------------------------------------------------------------------------------'
+\echo '-----INSERTING INTO SUBSEQUENT_FILINGS1 (INSERT 4/4) ...'
+\echo '----------------------------------------------------------------------------------------------------------------------' 
+
 INSERT INTO subsequent_filings1
 SELECT DISTINCT t1.appln_id, t.subsequent_id, t2.person_id as subsequent_person_id, applt_seq_nr, invt_seq_nr, t1.patent_office, t1.appln_filing_year, t.subsequent_date, 2, type
 FROM PRIORITY_FILINGS_inv t1 
@@ -424,7 +461,10 @@ JOIN t ON (t1.appln_id = t.appln_id )
 JOIN tls207_pers_appln t2 ON (t.subsequent_id = t2.appln_id)
 ORDER BY t1.appln_id, t.subsequent_date, t2.person_id, applt_seq_nr, invt_seq_nr ASC;
 
-DROP INDEX IF EXISTS sec1_idx, sec1_sub_idx, sec1_office_idx, sec1_year_idx, sec1_nb_prior_idx, sec1_applt_idx, sec1_invt_idx;							
+\echo '----------------------------------------------------------------------------------------------------------------------'
+\echo '-----CREATE SUBSEQUENT_FILINGS1 INDICES ...'
+\echo '----------------------------------------------------------------------------------------------------------------------' 
+
 CREATE INDEX sec1_idx ON SUBSEQUENT_FILINGS1 USING btree (appln_id);
 CREATE INDEX sec1_sub_idx ON SUBSEQUENT_FILINGS1 USING btree (subsequent_id);
 CREATE INDEX sec1_sub_pers_idx ON SUBSEQUENT_FILINGS1 USING btree (subsequent_person_id);
@@ -435,181 +475,100 @@ CREATE INDEX sec1_applt_idx ON SUBSEQUENT_FILINGS1 USING btree (applt_seq_nr);
 CREATE INDEX sec1_invt_idx ON SUBSEQUENT_FILINGS1 USING btree (invt_seq_nr);
 DROP TABLE t;
 
+-- Optimization: Update stats for the join
+VACUUM ANALYZE SUBSEQUENT_FILINGS1;
+
+\echo '----------------------------------------------------------------------------------------------------------------------'
+\echo 'CREATING EQUIVALENTS2 (TABLE 13/27) ...'
+\echo '----------------------------------------------------------------------------------------------------------------------' 
  
--- B.1 Information from equivalents (source = 2)
--- B.1.1 Find all the relevant information
 DROP TABLE IF EXISTS EQUIVALENTS2;
-CREATE  TABLE EQUIVALENTS2 AS (
-SELECT  t1.appln_id,  t1.subsequent_id, t1.subsequent_person_id, t1.subsequent_date, t1.patent_office, t1.appln_filing_year, ctry_code, type
+CREATE UNLOGGED TABLE EQUIVALENTS2 AS (
+SELECT  t1.appln_id, t1.subsequent_id, t1.subsequent_date, t1.patent_office, t1.appln_filing_year, ctry_code, type
 FROM SUBSEQUENT_FILINGS1 t1 
-JOIN country_codes_inv t2 ON (t1.subsequent_id = t2.appln_id and t1.subsequent_person_id = t2.person_id)
-WHERE t1.nb_priorities = 1 AND invt_seq_nr >0 AND NULLIF(ctry_code, '  ') IS NOT NULL );
-DROP INDEX IF EXISTS equ2_idx, equ2_sub_idx, equ2_pers_idx, equ2_office_idx, equ2_year_idx;
-CREATE INDEX equ2_idx ON EQUIVALENTS2 USING btree (appln_id);
-CREATE INDEX equ2_sub_idx ON EQUIVALENTS2 USING btree (subsequent_id);
-CREATE INDEX equ2_sub_pers_idx ON EQUIVALENTS2 USING btree (subsequent_person_id);
-CREATE INDEX equ2_office_idx ON EQUIVALENTS2 USING btree (patent_office);
-CREATE INDEX equ2_year_idx ON EQUIVALENTS2 USING btree (appln_filing_year); 
+JOIN country_codes_inv t2 ON (t1.subsequent_id = t2.appln_id)
+WHERE t1.nb_priorities = 1  AND invt_seq_nr > 0 AND NULLIF(ctry_code, '  ') IS NOT NULL);
+CREATE INDEX equ5_idx ON EQUIVALENTS2 USING btree (appln_id);
+CREATE INDEX equ5_sub_idx ON EQUIVALENTS2  USING btree (subsequent_id);
+CREATE INDEX equ5_office_idx ON EQUIVALENTS2 USING btree (patent_office);
+CREATE INDEX equ5_year_idx ON EQUIVALENTS2 USING btree (appln_filing_year); 
+
+\echo '----------------------------------------------------------------------------------------------------------------------'
+\echo 'CREATING EARLIEST_EQUIVALENT2 (TABLE 14/27) ...'
+\echo '----------------------------------------------------------------------------------------------------------------------' 
  
--- B.1.2 Select the most appropriate (i.e. earliest) equivalent
 DROP TABLE IF EXISTS EARLIEST_EQUIVALENT2;
-CREATE  TABLE EARLIEST_EQUIVALENT2 AS 
-SELECT t1.appln_id, subsequent_id, subsequent_person_id, ctry_code, type, min
+CREATE UNLOGGED TABLE EARLIEST_EQUIVALENT2 AS 
+SELECT t1.appln_id, subsequent_id, ctry_code, type, min
 FROM EQUIVALENTS2 t1
 JOIN (SELECT appln_id, min(subsequent_date) AS min
 FROM EQUIVALENTS2
 GROUP BY appln_id) AS t2 ON (t1.appln_id = t2.appln_id AND t1.subsequent_date = t2.min);
-DROP INDEX IF EXISTS eequ_idx, eequ_sub_idx, eequ2_sub_pers_idx;
-CREATE INDEX eequ2_idx ON EARLIEST_EQUIVALENT2 USING btree (appln_id);
-CREATE INDEX eequ2_sub_idx ON EARLIEST_EQUIVALENT2 USING btree (subsequent_id);
-CREATE INDEX eequ2_sub_pers_idx ON EARLIEST_EQUIVALENT2 USING btree (subsequent_person_id);
+CREATE INDEX eequ5_idx ON EARLIEST_EQUIVALENT2 USING btree (appln_id);
+CREATE INDEX eequ5_sub_idx ON EARLIEST_EQUIVALENT2 USING btree (subsequent_id);
 
--- deal with cases where we have several earliest equivalents (select only one)
+\echo '----------------------------------------------------------------------------------------------------------------------'
+\echo 'CREATING EARLIEST_EQUIVALENT2_ (TABLE 15/27) ...'
+\echo '----------------------------------------------------------------------------------------------------------------------'
+
 DROP TABLE IF EXISTS EARLIEST_EQUIVALENT2_;
-CREATE TABLE EARLIEST_EQUIVALENT2_ AS
+CREATE UNLOGGED TABLE EARLIEST_EQUIVALENT2_ AS
 SELECT t1.* FROM earliest_equivalent2 t1 JOIN 
 (SELECT appln_id, min(subsequent_id) 
 FROM EARLIEST_EQUIVALENT2
 GROUP BY appln_id) AS t2
 ON t1.appln_id = t2.appln_id AND t1.subsequent_id = t2.min;
-DROP INDEX IF EXISTS eequ2_idx_, eequ2_sub_idx_, eequ2_sub_pers_idx_;
-CREATE INDEX eequ2_idx_ ON EARLIEST_EQUIVALENT2_ USING btree (appln_id);
-CREATE INDEX eequ2_sub_idx_ ON EARLIEST_EQUIVALENT2_ USING btree (subsequent_id);
-CREATE INDEX eequ2_sub_pers_idx_ ON EARLIEST_EQUIVALENT2_ USING btree (subsequent_person_id);
+CREATE INDEX eequ5_idx_ ON EARLIEST_EQUIVALENT2_ USING btree (appln_id);
+CREATE INDEX eequ5_sub_idx_ ON EARLIEST_EQUIVALENT2_ USING btree (subsequent_id);
 
--- B.2 Information from other subsequent filings (source = 3)
--- B.2.1 Find information on inventors from subsequent filings for patents that have not yet been identified via their potential equivalent(s)
+\echo '----------------------------------------------------------------------------------------------------------------------'
+\echo 'CREATING OTHER_SUBSEQUENT_FILINGS3 (TABLE 16/27) ...'
+\echo '----------------------------------------------------------------------------------------------------------------------'
+
 DROP TABLE IF EXISTS OTHER_SUBSEQUENT_FILINGS3;
-CREATE  TABLE OTHER_SUBSEQUENT_FILINGS3 AS (
-SELECT  t1.appln_id,  t1.subsequent_id, t1.subsequent_person_id, t1.subsequent_date, t1.patent_office, t1.appln_filing_year, ctry_code, type
+CREATE UNLOGGED TABLE OTHER_SUBSEQUENT_FILINGS3 AS (
+SELECT  t1.appln_id, t1.subsequent_id, t1.subsequent_date, t1.patent_office, t1.appln_filing_year, ctry_code, type 
 FROM SUBSEQUENT_FILINGS1 t1 
-JOIN country_codes_inv t2 ON (t1.subsequent_id = t2.appln_id and t1.subsequent_person_id = t2.person_id)
-WHERE t1.nb_priorities > 1 AND invt_seq_nr >0 AND NULLIF(ctry_code, '  ') IS NOT NULL);
-DROP INDEX IF EXISTS other3_idx, other3_sub_idx, other3_office_idy, other3_year_idx;
-CREATE INDEX other3_idx ON OTHER_SUBSEQUENT_FILINGS3 USING btree (appln_id);
-CREATE INDEX other3_sub_idx ON OTHER_SUBSEQUENT_FILINGS3 USING btree (subsequent_id);
-CREATE INDEX other3_sub_pers_idx ON OTHER_SUBSEQUENT_FILINGS3 USING btree (subsequent_person_id);
-CREATE INDEX other3_office_idx ON OTHER_SUBSEQUENT_FILINGS3 USING btree (patent_office);
-CREATE INDEX other3_year_idx ON OTHER_SUBSEQUENT_FILINGS3 USING btree (appln_filing_year);  
+JOIN country_codes_inv t2 ON (t1.subsequent_id = t2.appln_id)
+WHERE t1.nb_priorities > 1  AND invt_seq_nr > 0 AND NULLIF(ctry_code, '  ') IS NOT NULL );
+CREATE INDEX other6_idx ON OTHER_SUBSEQUENT_FILINGS3 USING btree (appln_id);
+CREATE INDEX other6_sub_idx ON OTHER_SUBSEQUENT_FILINGS3 USING btree (subsequent_id);
+CREATE INDEX other6_office_idx ON OTHER_SUBSEQUENT_FILINGS3 USING btree (patent_office);
+CREATE INDEX other6_year_idx ON OTHER_SUBSEQUENT_FILINGS3 USING btree (appln_filing_year); 
+
+\echo '----------------------------------------------------------------------------------------------------------------------'
+\echo 'CREATING EARLIEST_SUBSEQUENT_FILING3 (TABLE 17/27) ...'
+\echo '----------------------------------------------------------------------------------------------------------------------' 
  
 -- B.2.2 Select the most appropriate (i.e. earliest) subsequent filing
 DROP TABLE IF EXISTS EARLIEST_SUBSEQUENT_FILING3;
-CREATE  TABLE EARLIEST_SUBSEQUENT_FILING3 AS 
-SELECT t1.appln_id, subsequent_id, subsequent_person_id, ctry_code, type, min
+CREATE UNLOGGED TABLE EARLIEST_SUBSEQUENT_FILING3 AS 
+SELECT t1.appln_id, subsequent_id, ctry_code, type, min
 FROM OTHER_SUBSEQUENT_FILINGS3 t1
 JOIN (SELECT appln_id, min(subsequent_date) AS min
 FROM OTHER_SUBSEQUENT_FILINGS3
 GROUP BY appln_id) AS t2 ON (t1.appln_id = t2.appln_id AND t1.subsequent_date = t2.min);
-DROP INDEX IF EXISTS esub3_idx, esub3_sub_idx, esub3_sub_pers_idx;
-CREATE INDEX esub3_idx ON EARLIEST_SUBSEQUENT_FILING3 USING btree (appln_id);
-CREATE INDEX esub3_sub_idx ON EARLIEST_SUBSEQUENT_FILING3 USING btree (subsequent_id);
-CREATE INDEX esub3_sub_pers_idx ON EARLIEST_SUBSEQUENT_FILING3 USING btree (subsequent_person_id);
+CREATE INDEX esub6_idx ON EARLIEST_SUBSEQUENT_FILING3 USING btree (appln_id);
+CREATE INDEX esub6_sub_idx ON EARLIEST_SUBSEQUENT_FILING3 USING btree (subsequent_id);
+
+\echo '----------------------------------------------------------------------------------------------------------------------'
+\echo 'CREATING EARLIEST_SUBSEQUENT_FILING3_ (TABLE 18/27) ...'
+\echo '----------------------------------------------------------------------------------------------------------------------' 
  
 -- deal with cases where we have several earliest equivalents (select only one)
 DROP TABLE IF EXISTS EARLIEST_SUBSEQUENT_FILING3_;
-CREATE TABLE EARLIEST_SUBSEQUENT_FILING3_ AS
+CREATE UNLOGGED TABLE EARLIEST_SUBSEQUENT_FILING3_ AS
 SELECT t1.* FROM EARLIEST_SUBSEQUENT_FILING3 t1 JOIN 
 (SELECT appln_id, min(subsequent_id) 
 FROM EARLIEST_SUBSEQUENT_FILING3
 GROUP BY appln_id) AS t2
 ON t1.appln_id = t2.appln_id AND t1.subsequent_id = t2.min;
-DROP INDEX IF EXISTS esub3_idx_, esub3_sub_idx_, esub3_sub_pers_idx_;
-CREATE INDEX esub3_idx_ ON EARLIEST_SUBSEQUENT_FILING3_ USING btree (appln_id);
-CREATE INDEX esub3_sub_idx_ ON EARLIEST_SUBSEQUENT_FILING3_ USING btree (subsequent_id);
-CREATE INDEX esub3_sub_pers_idx_ ON EARLIEST_SUBSEQUENT_FILING3_ USING btree (subsequent_person_id);
- 
--- Applicant information
- 
--- C. Information that is directly available (source = 4)
-DROP TABLE IF EXISTS PRIORITY_FILINGS4;
-CREATE TABLE PRIORITY_FILINGS4 AS (
-SELECT DISTINCT t1.appln_id, t1.patent_office, t1.appln_filing_year, ctry_code, type
-FROM PRIORITY_FILINGS_inv t1 
-JOIN country_codes_app t2 ON (t1.appln_id = t2.appln_id)
-WHERE NULLIF(t2.ctry_code, '  ') IS NOT NULL) ;
-DROP INDEX IF EXISTS pri4_idx, pri4_office_idx, pri4_year_idx;
-CREATE INDEX pri4_idx ON PRIORITY_FILINGS4 USING btree (appln_id);
-CREATE INDEX pri4_office_idx ON PRIORITY_FILINGS4 USING btree (patent_office);
-CREATE INDEX pri4_year_idx ON PRIORITY_FILINGS4 USING btree (appln_filing_year);  
+CREATE INDEX esub6_idx_ ON EARLIEST_SUBSEQUENT_FILING3_ USING btree (appln_id);
+CREATE INDEX esub6_sub_idx_ ON EARLIEST_SUBSEQUENT_FILING3_ USING btree (subsequent_id);
 
- 
--- D.1 Use information from equivalents (source = 5)
--- D.1.1 Find all the relevant information
-DROP TABLE IF EXISTS EQUIVALENTS5;
-CREATE  TABLE EQUIVALENTS5 AS (
-SELECT  t1.appln_id, t1.subsequent_id, t1.subsequent_date, t1.patent_office, t1.appln_filing_year, ctry_code, type
-FROM SUBSEQUENT_FILINGS1 t1 
-JOIN country_codes_app t2 ON (t1.subsequent_id = t2.appln_id)
-WHERE t1.nb_priorities = 1  AND applt_seq_nr > 0 AND NULLIF(ctry_code, '  ') IS NOT NULL);
-DROP INDEX IF EXISTS equ5_idx, equ5_sub_idx, equ5_office_idx, equ5_year_idx;
-CREATE INDEX equ5_idx ON EQUIVALENTS5 USING btree (appln_id);
-CREATE INDEX equ5_sub_idx ON EQUIVALENTS5  USING btree (subsequent_id);
-CREATE INDEX equ5_office_idx ON EQUIVALENTS5 USING btree (patent_office);
-CREATE INDEX equ5_year_idx ON EQUIVALENTS5 USING btree (appln_filing_year); 
- 
--- D.1.2 Select the most appropriate (i.e. earliest) equivalent
-DROP TABLE IF EXISTS EARLIEST_EQUIVALENT5;
-CREATE  TABLE EARLIEST_EQUIVALENT5 AS 
-SELECT t1.appln_id, subsequent_id, ctry_code, type, min
-FROM EQUIVALENTS5 t1
-JOIN (SELECT appln_id, min(subsequent_date) AS min
-FROM EQUIVALENTS5
-GROUP BY appln_id) AS t2 ON (t1.appln_id = t2.appln_id AND t1.subsequent_date = t2.min);
-DROP INDEX IF EXISTS eequ5_idx, eequ_sub_idx;
-CREATE INDEX eequ5_idx ON EARLIEST_EQUIVALENT5 USING btree (appln_id);
-CREATE INDEX eequ5_sub_idx ON EARLIEST_EQUIVALENT5 USING btree (subsequent_id);
- 
--- deal with cases where we have several earliest equivalents (select only one)
-DROP TABLE IF EXISTS EARLIEST_EQUIVALENT5_;
-CREATE TABLE EARLIEST_EQUIVALENT5_ AS
-SELECT t1.* FROM earliest_equivalent5 t1 JOIN 
-(SELECT appln_id, min(subsequent_id) 
-FROM EARLIEST_EQUIVALENT5
-GROUP BY appln_id) AS t2
-ON t1.appln_id = t2.appln_id AND t1.subsequent_id = t2.min
-;
-DROP INDEX IF EXISTS eequ5_idx_, eequ_sub_idx_;
-CREATE INDEX eequ5_idx_ ON EARLIEST_EQUIVALENT5_ USING btree (appln_id);
-CREATE INDEX eequ5_sub_idx_ ON EARLIEST_EQUIVALENT5_ USING btree (subsequent_id);
- 
--- D.2 Use information from other subsequent filings (source = 6)
--- D.2.1 Find information on inventors from subsequent filings for patents that have not yet been identified via their potential equivalents
-DROP TABLE IF EXISTS OTHER_SUBSEQUENT_FILINGS6;
-CREATE TABLE OTHER_SUBSEQUENT_FILINGS6 AS (
-SELECT  t1.appln_id, t1.subsequent_id, t1.subsequent_date, t1.patent_office, t1.appln_filing_year, ctry_code, type 
-FROM SUBSEQUENT_FILINGS1 t1 
-JOIN country_codes_app t2 ON (t1.subsequent_id = t2.appln_id)
-WHERE t1.nb_priorities > 1  AND applt_seq_nr > 0 AND NULLIF(ctry_code, '  ') IS NOT NULL );
-DROP INDEX IF EXISTS other6_idx, other6_sub_idx, other6_office_idx, other6_year_idx, other6_sub_pers_idx;
-CREATE INDEX other6_idx ON OTHER_SUBSEQUENT_FILINGS6 USING btree (appln_id);
-CREATE INDEX other6_sub_idx ON OTHER_SUBSEQUENT_FILINGS6 USING btree (subsequent_id);
-CREATE INDEX other6_office_idx ON OTHER_SUBSEQUENT_FILINGS6 USING btree (patent_office);
-CREATE INDEX other6_year_idx ON OTHER_SUBSEQUENT_FILINGS6 USING btree (appln_filing_year); 
- 
--- D.2.2 Select the most appropriate (i.e. earliest) subsequent filing
-DROP TABLE IF EXISTS EARLIEST_SUBSEQUENT_FILING6;
-CREATE  TABLE EARLIEST_SUBSEQUENT_FILING6 AS 
-SELECT t1.appln_id, subsequent_id, ctry_code, type, min
-FROM OTHER_SUBSEQUENT_FILINGS6 t1
-JOIN (SELECT appln_id, min(subsequent_date) AS min
-FROM OTHER_SUBSEQUENT_FILINGS6
-GROUP BY appln_id) AS t2 ON (t1.appln_id = t2.appln_id AND t1.subsequent_date = t2.min);
-DROP INDEX IF EXISTS esub6_idx, esub6_sub_idx;
-CREATE INDEX esub6_idx ON EARLIEST_SUBSEQUENT_FILING6 USING btree (appln_id);
-CREATE INDEX esub6_sub_idx ON EARLIEST_SUBSEQUENT_FILING6 USING btree (subsequent_id);
- 
--- deal with cases where we have several earliest equivalents (select only one)
-DROP TABLE IF EXISTS EARLIEST_SUBSEQUENT_FILING6_;
-CREATE TABLE EARLIEST_SUBSEQUENT_FILING6_ AS
-SELECT t1.* FROM EARLIEST_SUBSEQUENT_FILING6 t1 JOIN 
-(SELECT appln_id, min(subsequent_id) 
-FROM EARLIEST_SUBSEQUENT_FILING6
-GROUP BY appln_id) AS t2
-ON t1.appln_id = t2.appln_id AND t1.subsequent_id = t2.min
-;
-DROP INDEX IF EXISTS esub6_idx_, esub6_sub_idx_;
-CREATE INDEX esub6_idx_ ON EARLIEST_SUBSEQUENT_FILING6_ USING btree (appln_id);
-CREATE INDEX esub6_sub_idx_ ON EARLIEST_SUBSEQUENT_FILING6_ USING btree (subsequent_id);
+\echo '----------------------------------------------------------------------------------------------------------------------'
+\echo 'CREATING TABLE_INV (TABLE 25/27) ...'
+\echo '----------------------------------------------------------------------------------------------------------------------' 
  
 -- table containing the information on priority filings and country information if available for priority filing
 DROP TABLE IF EXISTS TABLE_INV;
@@ -618,6 +577,10 @@ SELECT * FROM priority_filings1;
  
 CREATE INDEX TABLE_INV_APPLN_ID ON TABLE_INV USING btree (appln_id);
 CREATE INDEX TABLE_INV_PERSON_ID ON TABLE_INV USING btree (person_id);
+
+\echo '----------------------------------------------------------------------------------------------------------------------'
+\echo 'CREATING TABLE_TO_BE_FILLED_INV (TABLE 26/27) ...'
+\echo '----------------------------------------------------------------------------------------------------------------------' 
  
 DROP TABLE IF EXISTS TABLE_TO_BE_FILLED_INV;
 CREATE  TABLE TABLE_TO_BE_FILLED_INV (
@@ -631,11 +594,17 @@ type TEXT DEFAULT NULL
  
  
  
-/* 
-  MAIN PROCEDURE
+/* MAIN PROCEDURE
 */
- 
 
+\echo '----------------------------------------------------------------------------------------------------------------------'
+\echo 'MAIN PROCEDURE'
+\echo '----------------------------------------------------------------------------------------------------------------------' 
+ 
+\echo '----------------------------------------------------------------------------------------------------------------------'
+\echo '-----INSERTING INTO TABLE_TO_BE_FILLED_INV (INSERT 1/7) ...'
+\echo '----------------------------------------------------------------------------------------------------------------------' 
+ 
 -- A Insert information that is directly available (source = 1)
 INSERT INTO TABLE_TO_BE_FILLED_INV
 SELECT  t_.appln_id, t_.person_id, ctry_code, 1, type
@@ -643,9 +612,17 @@ FROM TABLE_INV t_
 WHERE NULLIF(t_.ctry_code, '  ') IS NOT NULL;
  
 CREATE INDEX TABLE_TO_BE_FILLED_INV_appln_id ON TABLE_TO_BE_FILLED_INV(appln_id);
+
+\echo '----------------------------------------------------------------------------------------------------------------------'
+\echo '----------DELETING INFO THAT WAS ADDED FROM FROM SOURCE ...'
+\echo '----------------------------------------------------------------------------------------------------------------------' 
  
 -- delete information that has been added
-DELETE FROM TABLE_INV t WHERE t.appln_id IN (SELECT appln_id FROM TABLE_TO_BE_FILLED_INV);                
+DELETE FROM TABLE_INV t WHERE t.appln_id IN (SELECT appln_id FROM TABLE_TO_BE_FILLED_INV);    
+
+\echo '----------------------------------------------------------------------------------------------------------------------'
+\echo '-----INSERTING INTO TABLE_TO_BE_FILLED_INV (INSERT 2/7) ...'
+\echo '----------------------------------------------------------------------------------------------------------------------'             
  
 -- B.1 Add the information from each selected equivalent
 INSERT INTO TABLE_TO_BE_FILLED_INV
@@ -665,8 +642,16 @@ ON t1.appln_id = t2.appln_id
 WHERE NULLIF(t1.ctry_code, '  ') IS NOT NULL 
 ) AS t_
 ;
+
+\echo '----------------------------------------------------------------------------------------------------------------------'
+\echo '----------DELETING INFO THAT WAS ADDED FROM FROM SOURCE ...'
+\echo '----------------------------------------------------------------------------------------------------------------------' 
  
-DELETE FROM TABLE_INV t WHERE t.appln_id IN (SELECT appln_id FROM TABLE_TO_BE_FILLED_INV);                
+DELETE FROM TABLE_INV t WHERE t.appln_id IN (SELECT appln_id FROM TABLE_TO_BE_FILLED_INV);    
+
+\echo '----------------------------------------------------------------------------------------------------------------------'
+\echo '-----INSERTING INTO TABLE_TO_BE_FILLED_INV (INSERT 3/7) ...'
+\echo '----------------------------------------------------------------------------------------------------------------------'             
  
 -- B.2 Add the information from each selected subsequent filing
 INSERT INTO TABLE_TO_BE_FILLED_INV
@@ -686,10 +671,18 @@ ON t1.appln_id = t2.appln_id
 WHERE NULLIF(t1.ctry_code, '  ') IS NOT NULL 
 ) AS t_
 ;
+
+\echo '----------------------------------------------------------------------------------------------------------------------'
+\echo '----------DELETING INFO THAT WAS ADDED FROM FROM SOURCE ...'
+\echo '----------------------------------------------------------------------------------------------------------------------' 
  
 DELETE FROM TABLE_INV t WHERE t.appln_id IN (SELECT appln_id FROM TABLE_TO_BE_FILLED_INV);  
  
 -- Take information from applicants to recover missing information 
+
+\echo '----------------------------------------------------------------------------------------------------------------------'
+\echo '-----INSERTING INTO TABLE_TO_BE_FILLED_INV (INSERT 4/7) ...'
+\echo '----------------------------------------------------------------------------------------------------------------------' 
  
 -- C Insert information that is directly available (source = 4)
 INSERT INTO TABLE_TO_BE_FILLED_INV
@@ -709,8 +702,16 @@ ON t1.appln_id = t2.appln_id
 WHERE NULLIF(t1.ctry_code, '  ') IS NOT NULL 
 ) AS t_
 ;
+
+\echo '----------------------------------------------------------------------------------------------------------------------'
+\echo '----------DELETING INFO THAT WAS ADDED FROM FROM SOURCE ...'
+\echo '----------------------------------------------------------------------------------------------------------------------'
  
 DELETE FROM TABLE_INV t WHERE t.appln_id IN (SELECT appln_id FROM TABLE_TO_BE_FILLED_INV);  
+
+\echo '----------------------------------------------------------------------------------------------------------------------'
+\echo '-----INSERTING INTO TABLE_TO_BE_FILLED_INV (INSERT 5/7) ...'
+\echo '----------------------------------------------------------------------------------------------------------------------'
  
 -- D.1 Add the information from each selected equivalent
 INSERT INTO TABLE_TO_BE_FILLED_INV
@@ -730,8 +731,16 @@ ON t1.appln_id = t2.appln_id
 WHERE NULLIF(t1.ctry_code, '  ') IS NOT NULL 
 ) AS t_
 ;
+
+\echo '----------------------------------------------------------------------------------------------------------------------'
+\echo '----------DELETING INFO THAT WAS ADDED FROM FROM SOURCE ...'
+\echo '----------------------------------------------------------------------------------------------------------------------'
  
-DELETE FROM TABLE_INV t WHERE t.appln_id IN (SELECT appln_id FROM TABLE_TO_BE_FILLED_INV);  
+DELETE FROM TABLE_INV t WHERE t.appln_id IN (SELECT appln_id FROM TABLE_TO_BE_FILLED_INV); 
+
+\echo '----------------------------------------------------------------------------------------------------------------------'
+\echo '-----INSERTING INTO TABLE_TO_BE_FILLED_INV (INSERT 6/7) ...'
+\echo '----------------------------------------------------------------------------------------------------------------------' 
  
 -- D.2 Add the information from each selected subsequent filing
 INSERT INTO TABLE_TO_BE_FILLED_INV
@@ -751,8 +760,16 @@ ON t1.appln_id = t2.appln_id
 WHERE NULLIF(t1.ctry_code, '  ') IS NOT NULL 
 ) AS t_
 ;
+
+\echo '----------------------------------------------------------------------------------------------------------------------'
+\echo '----------DELETING INFO THAT WAS ADDED FROM FROM SOURCE ...'
+\echo '----------------------------------------------------------------------------------------------------------------------'
  
 DELETE FROM TABLE_INV t WHERE t.appln_id IN (SELECT appln_id FROM TABLE_TO_BE_FILLED_INV);
+
+\echo '----------------------------------------------------------------------------------------------------------------------'
+\echo '-----INSERTING INTO TABLE_TO_BE_FILLED_INV (INSERT 7/7) ...'
+\echo '----------------------------------------------------------------------------------------------------------------------' 
  
 -- E. If country code is still missing, set it equal to a filing's patent office
 INSERT INTO TABLE_TO_BE_FILLED_INV
@@ -771,6 +788,10 @@ TABLE_INV) AS t2
 ON (t1.appln_id = t2.appln_id) 
 WHERE patent_office NOT IN ('EP', 'AP', 'EA', 'GC', 'OA', 'WO')
 ) AS t_  ;
+
+\echo '----------------------------------------------------------------------------------------------------------------------'
+\echo 'CREATING PF_INV_PERS_CTRY_ALL (TABLE 27/27) ...'
+\echo '----------------------------------------------------------------------------------------------------------------------' 
  
 -- Table with location information from all possible sources
 DROP TABLE IF EXISTS PF_INV_PERS_CTRY_ALL;
@@ -783,26 +804,35 @@ priority_year INTEGER DEFAULT NULL,
 ctry_code TEXT DEFAULT NULL,
 source SMALLINT DEFAULT NULL,
 type TEXT DEFAULT NULL
-); COMMENT ON TABLE PF_INV_PERS_CTRY_ALL IS 'Inventors from priority filings of a given (po, year)';
+); COMMENT ON TABLE PF_INV_PERS_CTRY_ALL IS 'Applicants from priority filings of a given (po, year)';
+
+\echo '----------------------------------------------------------------------------------------------------------------------'
+\echo '-----INSERTING INTO PF_INV_PERS_CTRY_ALL (INSERT 1/1) ...'
+\echo '----------------------------------------------------------------------------------------------------------------------' 
  
 -- F. Job done, insert into final table 
 INSERT INTO PF_INV_PERS_CTRY_ALL
 SELECT t1.appln_id, t1.person_id, t2.patent_office, t2.appln_filing_date, t2.appln_filing_year, ctry_code, source, type
 FROM TABLE_TO_BE_FILLED_INV t1 JOIN (
 SELECT DISTINCT appln_id, patent_office, appln_filing_date, appln_filing_year FROM PRIORITY_FILINGS_inv) AS t2 ON t1.appln_id = t2.appln_id;
+
+\echo '----------------------------------------------------------------------------------------------------------------------'
+\echo '-----CREATE PF_INV_PERS_CTRY_ALL INDICES ...'
+\echo '----------------------------------------------------------------------------------------------------------------------' 
  
 CREATE INDEX PF_INV_PERS_CTRY_ALL_APPLN_ID ON PF_INV_PERS_CTRY_ALL(appln_id);
 CREATE INDEX PF_INV_PERS_CTRY_ALL_PERS_ID ON PF_INV_PERS_CTRY_ALL(person_id);
 CREATE INDEX PF_INV_PERS_CTRY_ALL_YEAR ON PF_INV_PERS_CTRY_ALL(priority_year);
  
- 
 ALTER TABLE PF_INV_PERS_CTRY_ALL ADD COLUMN lastupdate TIMESTAMP; 
 UPDATE PF_INV_PERS_CTRY_ALL SET lastupdate = CURRENT_TIMESTAMP;  
-  
  
+\echo '----------------------------------------------------------------------------------------------------------------------'
+\echo '-----UPDATING COUNTRY NAMES IN PF_INV_PERS_CTRY_ALL ...'
+\echo '----------------------------------------------------------------------------------------------------------------------' 
  
-ALTER TABLE pf_inv_pers_ctry_all ADD COLUMN country VARCHAR; 
-UPDATE pf_inv_pers_ctry_all SET country = 
+ALTER TABLE PF_INV_PERS_CTRY_ALL ADD COLUMN country VARCHAR; 
+UPDATE PF_INV_PERS_CTRY_ALL SET country = 
 CASE
 WHEN ctry_code ='AU' THEN 'Australia'
 WHEN ctry_code ='AT' THEN 'Austria'
@@ -854,12 +884,43 @@ WHEN ctry_code ='HK' THEN 'Hong Kong'
 END  ;
  
 CREATE INDEX PF_INV_PERS_CTRY_ALL_COUNTRY ON PF_INV_PERS_CTRY_ALL(country);
- 
 
-\copy (SELECT * FROM pf_inv_pers_ctry_all ORDER BY appln_id) to 'H:\RTAs_SupplyChainPatenting\raw\imputed\ctry_invt_person.txt' CSV HEADER NULL '  ' DELIMITER ',' ENCODING 'UTF8';
+-- Optimization
+VACUUM ANALYZE PF_INV_PERS_CTRY_ALL;
+
+\echo '----------------------------------------------------------------------------------------------------------------------'
+\echo '-----JOB DONE!'
+\echo '----------------------------------------------------------------------------------------------------------------------' 
+ 
+\echo '----------------------------------------------------------------------------------------------------------------------'
+\echo 'EXPORTING DATA (Dynamic Generation)'
+\echo '----------------------------------------------------------------------------------------------------------------------' 
+
+-- Configure output
+\pset format unaligned
+\pset tuples_only on
+
+-- Redirect to temp file
+\o _tmp_export_invt.sql
+
+-- Generate the \copy command with the dynamic output path
+SELECT format('\echo ''Exporting to: %s/imputed/ctry_invt_person.csv''', :'outdir_sql');
+SELECT format('\copy (SELECT * FROM pf_inv_pers_ctry_all ORDER BY appln_id) TO ''%s/imputed/ctry_invt_person.csv'' CSV HEADER NULL ''  '' DELIMITER '','' ENCODING ''UTF8'';', :'outdir_sql');
+
+-- Reset output
+\o
+\pset format aligned
+\pset tuples_only off
+
+-- Execute the generated command
+\i _tmp_export_invt.sql
+  
+\echo '----------------------------------------------------------------------------------------------------------------------'
+\echo 'DROPPING TABLES'
+\echo '----------------------------------------------------------------------------------------------------------------------' 
  
 DROP TABLE if exists po;
---DROP TABLE if exists toExclude;
+DROP TABLE if exists toExclude;
 DROP TABLE if exists PRIORITY_FILINGS_INV;
 DROP TABLE if exists TABLE_TO_BE_FILLED_INV;
 DROP TABLE if exists TABLE_INV;

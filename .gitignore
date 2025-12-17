@@ -1,8 +1,25 @@
-data/raw/
-data/intermediate/
-
-*.log
-*.smcl
-
+# --- System Files ---
 .DS_Store
 Thumbs.db
+~$*
+
+# --- Stata Archive ---
+# Ignore the archive folder completely
+code/stata/archive/
+
+# --- Data Folder Rules ---
+
+# 1. Ignore EVERYTHING in data by default
+data/*
+
+# 2. Allow Git to enter "data/raw" (but ignore its contents by default)
+!data/raw/
+data/raw/*
+
+# 3. Allow Git to enter "data/raw/crosswalks" (but ignore its contents by default)
+!data/raw/crosswalks/
+data/raw/crosswalks/*
+
+# 4. Finally, un-ignore ONLY the specific files you want to keep
+!data/raw/crosswalks/wipo_st3.csv
+!data/raw/crosswalks/regional_authorities.xlsx
