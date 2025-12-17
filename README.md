@@ -3,6 +3,9 @@
 ### Authors
 Jesse LaBelle, Inmaculada Martínez-Zarzoso, Ana Maria Santacreu, and Yoto Yotov
 
+### Paper Citation
+LaBelle, Jesse and Martinez-Zarzoso, Inmaculada and Santacreu, Ana Maria Maria and Yotov, Yoto, Cross-Border Patenting, Globalization, and Development (2023). CESifo Working Paper No. 10850, Available at SSRN: https://ssrn.com/abstract=4676768 or http://dx.doi.org/10.2139/ssrn.4676768
+
 ---
 
 ## 1. Overview
@@ -39,6 +42,7 @@ The repository is organized to maintain a clear separation between source code a
 3. The master script will automatically handle the execution of:
    * 1 -- deRassenfosse Imputation.do: Cleans and fills missing country codes.
    * 2 -- Bilateral Patent Flows Construction.do: Constructs the final dataset using fractional counting.
+   * 3 -- OECD Comparison
 
 ---
 
