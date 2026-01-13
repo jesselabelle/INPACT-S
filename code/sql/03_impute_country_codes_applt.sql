@@ -35,15 +35,22 @@
  
 ******************************************************************************************/
 
--- 1. Create the output folder (Windows command)
---    The '2>NUL' part hides the error if the folder already exists.
-\! mkdir "data\sql_output\imputed" 2>NUL
+-- Dynamic Directory Creation (based on schema)
+\pset format unaligned 
+\pset tuples_only on
+\o _mkdir_imp.bat
+SELECT format('mkdir "%s\imputed" 2>NUL', :'outdir_sql');
+\o
+\pset format aligned 
+\pset tuples_only off
+\! _mkdir_imp.bat
+\! del _mkdir_imp.bat 2>NUL
 
 SET search_path TO :patstat_schema, public;
 
--- 2. Performance Optimization (Tuned for 16GB RAM)
+-- Performance Optimization (Tuned for 16GB RAM)
 SET work_mem = '1GB';
-SET maintenance_work_mem = '2GB';
+SET maintenance_work_mem = '2047MB';
 
 /*
   CREATE ALL TABLES NEEDED
@@ -51,7 +58,7 @@ SET maintenance_work_mem = '2GB';
 
 
 \echo '----------------------------------------------------------------------------------------------------------------------'
-\echo 'CREATING po (TABLE 1/27) ...'
+\echo 'CREATING po (TABLE 1/28) ...'
 \echo '----------------------------------------------------------------------------------------------------------------------' 
  
 -- table containing the patent offices to browse
@@ -65,7 +72,7 @@ CREATE INDEX po_idx ON po USING btree (patent_office);
 -- table containing the appln_id to exclude from the analysis (e.g. petty patents) for a given patent office
 
 \echo '----------------------------------------------------------------------------------------------------------------------'
-\echo 'CREATING toExclude (TABLE 2/27) ...'
+\echo 'CREATING toExclude (TABLE 2/28) ...'
 \echo '----------------------------------------------------------------------------------------------------------------------' 
  
 DROP TABLE IF EXISTS toExclude;
@@ -93,7 +100,7 @@ CREATE INDEX exclude_idx ON toExclude USING btree (appln_id);
 -- Table containing the priority filings of a given (patent office, year)
 
 \echo '----------------------------------------------------------------------------------------------------------------------'
-\echo 'CREATING PRIORITY_FILINGS_app (TABLE 3/27) ...'
+\echo 'CREATING PRIORITY_FILINGS_app (TABLE 3/28) ...'
 \echo '----------------------------------------------------------------------------------------------------------------------' 
 
 DROP TABLE IF EXISTS PRIORITY_FILINGS_app;
@@ -280,7 +287,7 @@ CREATE INDEX pfa_idx3 ON PRIORITY_FILINGS_app USING btree (appln_filing_year);
 VACUUM ANALYZE PRIORITY_FILINGS_app;
 
 \echo '----------------------------------------------------------------------------------------------------------------------'
-\echo 'CREATING country_codes_inv (TABLE 4/27) ...'
+\echo 'CREATING country_codes_inv (TABLE 4/28) ...'
 \echo '----------------------------------------------------------------------------------------------------------------------' 
  
 DROP TABLE IF EXISTS country_codes_inv;
@@ -291,7 +298,7 @@ JOIN tls206_person t2 ON t1.person_id = t2.person_id
 WHERE invt_seq_nr > 0;
 
 \echo '----------------------------------------------------------------------------------------------------------------------'
-\echo 'CREATING country_codes_app (TABLE 5/27) ...'
+\echo 'CREATING country_codes_app (TABLE 5/28) ...'
 \echo '----------------------------------------------------------------------------------------------------------------------' 
 
 DROP TABLE IF EXISTS country_codes_app;
@@ -321,7 +328,7 @@ CREATE INDEX country_codes_pers_app_idx ON country_codes_app USING btree (person
 \echo '----------------------------------------------------------------------------------------------------------------------' 
 
 \echo '----------------------------------------------------------------------------------------------------------------------'
-\echo 'CREATING PRIORITY_FILINGS1 (TABLE 6/27) ...'
+\echo 'CREATING PRIORITY_FILINGS1 (TABLE 6/28) ...'
 \echo '----------------------------------------------------------------------------------------------------------------------' 
  
 -- A. Information that is directly available (source = 1)
@@ -338,7 +345,7 @@ CREATE INDEX pri1_office_idx ON PRIORITY_FILINGS1 USING btree (patent_office);
 CREATE INDEX pri1_year_idx ON PRIORITY_FILINGS1 USING btree (appln_filing_year);
 
 \echo '----------------------------------------------------------------------------------------------------------------------'
-\echo '-----CREATING t (from PRIORITY_FILINGS1) (TABLE 7/27) ...'
+\echo '-----CREATING t (from PRIORITY_FILINGS1) (TABLE 7/28) ...'
 \echo '----------------------------------------------------------------------------------------------------------------------' 
  
 -- B. Prepare a pool of all potential second filings
@@ -354,7 +361,7 @@ GROUP BY t1.appln_id, t3.appln_id, t3.appln_filing_date ;
 CREATE INDEX t_appln_id ON t(appln_id);  
 
 \echo '----------------------------------------------------------------------------------------------------------------------'
-\echo 'CREATING SUBSEQUENT_FILINGS1 (TABLE 8/27) ...'
+\echo 'CREATING SUBSEQUENT_FILINGS1 (TABLE 8/28) ...'
 \echo '----------------------------------------------------------------------------------------------------------------------' 
 
 DROP TABLE IF EXISTS SUBSEQUENT_FILINGS1;
@@ -366,7 +373,7 @@ JOIN tls207_pers_appln t2 ON (t.subsequent_id = t2.appln_id)
 ORDER BY t1.appln_id, t.subsequent_date, t2.person_id, applt_seq_nr, invt_seq_nr ASC);
 
 \echo '----------------------------------------------------------------------------------------------------------------------'
-\echo '-----CREATING t (from PRIORITY_FILINGS_app) (TABLE 9/27) ...'
+\echo '-----CREATING t (from PRIORITY_FILINGS_app) (TABLE 9/28) ...'
 \echo '----------------------------------------------------------------------------------------------------------------------' 
 
 DROP TABLE t;
@@ -392,7 +399,7 @@ JOIN tls207_pers_appln t2 ON (t.subsequent_id = t2.appln_id)
 ORDER BY t1.appln_id, t.subsequent_date, t2.person_id, applt_seq_nr, invt_seq_nr ASC;
 
 \echo '----------------------------------------------------------------------------------------------------------------------'
-\echo '-----CREATING t (from PRIORITY_FILINGS_app) (TABLE 10/27) ...'
+\echo '-----CREATING t (from PRIORITY_FILINGS_app) (TABLE 10/28) ...'
 \echo '----------------------------------------------------------------------------------------------------------------------' 
 
 DROP TABLE t;
@@ -418,7 +425,7 @@ JOIN tls207_pers_appln t2 ON (t.subsequent_id = t2.appln_id)
 ORDER BY t1.appln_id, t.subsequent_date, t2.person_id, applt_seq_nr, invt_seq_nr ASC;
 
 \echo '----------------------------------------------------------------------------------------------------------------------'
-\echo '-----CREATING t (from PRIORITY_FILINGS_app) (TABLE 11/27) ...'
+\echo '-----CREATING t (from PRIORITY_FILINGS_app) (TABLE 11/28) ...'
 \echo '----------------------------------------------------------------------------------------------------------------------' 
 
 DROP TABLE t;
@@ -443,7 +450,7 @@ JOIN tls207_pers_appln t2 ON (t.subsequent_id = t2.appln_id)
 ORDER BY t1.appln_id, t.subsequent_date, t2.person_id, applt_seq_nr, invt_seq_nr ASC;
 
 \echo '----------------------------------------------------------------------------------------------------------------------'
-\echo '-----CREATING t (from PRIORITY_FILINGS_app) (TABLE 12/27) ...'
+\echo '-----CREATING t (from PRIORITY_FILINGS_app) (TABLE 12/28) ...'
 \echo '----------------------------------------------------------------------------------------------------------------------' 
 
 DROP TABLE t;
@@ -488,7 +495,7 @@ DROP TABLE t;
 VACUUM ANALYZE SUBSEQUENT_FILINGS1;
 
 \echo '----------------------------------------------------------------------------------------------------------------------'
-\echo 'CREATING EQUIVALENTS2 (TABLE 13/27) ...'
+\echo 'CREATING EQUIVALENTS2 (TABLE 13/28) ...'
 \echo '----------------------------------------------------------------------------------------------------------------------' 
  
 -- B.1 Information from equivalents (source = 2)
@@ -507,7 +514,7 @@ CREATE INDEX equ2_office_idx ON EQUIVALENTS2 USING btree (patent_office);
 CREATE INDEX equ2_year_idx ON EQUIVALENTS2 USING btree (appln_filing_year); 
 
 \echo '----------------------------------------------------------------------------------------------------------------------'
-\echo 'CREATING EARLIEST_EQUIVALENT2 (TABLE 14/27) ...'
+\echo 'CREATING EARLIEST_EQUIVALENT2 (TABLE 14/28) ...'
 \echo '----------------------------------------------------------------------------------------------------------------------' 
  
 -- B.1.2 Select the most appropriate (i.e. earliest) equivalent
@@ -524,7 +531,7 @@ CREATE INDEX eequ2_sub_idx ON EARLIEST_EQUIVALENT2 USING btree (subsequent_id);
 CREATE INDEX eequ2_sub_pers_idx ON EARLIEST_EQUIVALENT2 USING btree (subsequent_person_id);
 
 \echo '----------------------------------------------------------------------------------------------------------------------'
-\echo 'CREATING EARLIEST_EQUIVALENT2_ (TABLE 15/27) ...'
+\echo 'CREATING EARLIEST_EQUIVALENT2_ (TABLE 15/28) ...'
 \echo '----------------------------------------------------------------------------------------------------------------------'
 
 -- deal with cases where we have several earliest equivalents (select only one)
@@ -541,7 +548,7 @@ CREATE INDEX eequ2_sub_idx_ ON EARLIEST_EQUIVALENT2_ USING btree (subsequent_id)
 CREATE INDEX eequ2_sub_pers_idx_ ON EARLIEST_EQUIVALENT2_ USING btree (subsequent_person_id);
 
 \echo '----------------------------------------------------------------------------------------------------------------------'
-\echo 'CREATING OTHER_SUBSEQUENT_FILINGS3 (TABLE 16/27) ...'
+\echo 'CREATING OTHER_SUBSEQUENT_FILINGS3 (TABLE 16/28) ...'
 \echo '----------------------------------------------------------------------------------------------------------------------'
 
 -- B.2 Information from other subsequent filings (source = 3)
@@ -560,7 +567,7 @@ CREATE INDEX other3_office_idx ON OTHER_SUBSEQUENT_FILINGS3 USING btree (patent_
 CREATE INDEX other3_year_idx ON OTHER_SUBSEQUENT_FILINGS3 USING btree (appln_filing_year); 
 
 \echo '----------------------------------------------------------------------------------------------------------------------'
-\echo 'CREATING EARLIEST_SUBSEQUENT_FILING3 (TABLE 17/27) ...'
+\echo 'CREATING EARLIEST_SUBSEQUENT_FILING3 (TABLE 17/28) ...'
 \echo '----------------------------------------------------------------------------------------------------------------------' 
  
 -- B.2.2 Select the most appropriate (i.e. earliest) subsequent filing
@@ -577,7 +584,7 @@ CREATE INDEX esub3_sub_idx ON EARLIEST_SUBSEQUENT_FILING3 USING btree (subsequen
 CREATE INDEX esub3_sub_pers_idx ON EARLIEST_SUBSEQUENT_FILING3 USING btree (subsequent_person_id);
 
 \echo '----------------------------------------------------------------------------------------------------------------------'
-\echo 'CREATING EARLIEST_SUBSEQUENT_FILING3_ (TABLE 18/27) ...'
+\echo 'CREATING EARLIEST_SUBSEQUENT_FILING3_ (TABLE 18/28) ...'
 \echo '----------------------------------------------------------------------------------------------------------------------' 
  
 -- deal with cases where we have several earliest equivalents (select only one)
@@ -596,11 +603,11 @@ CREATE INDEX esub3_sub_pers_idx_ ON EARLIEST_SUBSEQUENT_FILING3_ USING btree (su
 -- Inventor information
 
 \echo '----------------------------------------------------------------------------------------------------------------------'
-\echo 'INVENTOR INFORMATION
+\echo 'INVENTOR INFORMATION'
 \echo '----------------------------------------------------------------------------------------------------------------------' 
 
 \echo '----------------------------------------------------------------------------------------------------------------------'
-\echo 'CREATING PRIORITY_FILINGS4 (TABLE 18/27) ...'
+\echo 'CREATING PRIORITY_FILINGS4 (TABLE 19/28) ...'
 \echo '----------------------------------------------------------------------------------------------------------------------' 
  
 -- C. Information that is directly available (source = 4)
@@ -616,7 +623,7 @@ CREATE INDEX pri4_office_idx ON PRIORITY_FILINGS4 USING btree (patent_office);
 CREATE INDEX pri4_year_idx ON PRIORITY_FILINGS4 USING btree (appln_filing_year);  
 
 \echo '----------------------------------------------------------------------------------------------------------------------'
-\echo 'CREATING EQUIVALENTS5 (TABLE 19/27) ...'
+\echo 'CREATING EQUIVALENTS5 (TABLE 20/28) ...'
 \echo '----------------------------------------------------------------------------------------------------------------------' 
  
 -- D.1 Use information from equivalents (source = 5)
@@ -634,7 +641,7 @@ CREATE INDEX equ5_office_idx ON EQUIVALENTS5 USING btree (patent_office);
 CREATE INDEX equ5_year_idx ON EQUIVALENTS5 USING btree (appln_filing_year); 
 
 \echo '----------------------------------------------------------------------------------------------------------------------'
-\echo 'CREATING EARLIEST_EQUIVALENT5 (TABLE 20/27) ...'
+\echo 'CREATING EARLIEST_EQUIVALENT5 (TABLE 21/28) ...'
 \echo '----------------------------------------------------------------------------------------------------------------------' 
  
 -- D.1.2 Select the most appropriate (i.e. earliest) equivalent
@@ -650,7 +657,7 @@ CREATE INDEX eequ5_idx ON EARLIEST_EQUIVALENT5 USING btree (appln_id);
 CREATE INDEX eequ5_sub_idx ON EARLIEST_EQUIVALENT5 USING btree (subsequent_id);
 
 \echo '----------------------------------------------------------------------------------------------------------------------'
-\echo 'CREATING EARLIEST_EQUIVALENT5_ (TABLE 21/27) ...'
+\echo 'CREATING EARLIEST_EQUIVALENT5_ (TABLE 22/28) ...'
 \echo '----------------------------------------------------------------------------------------------------------------------' 
  
 -- deal with cases where we have several earliest equivalents (select only one)
@@ -667,7 +674,7 @@ CREATE INDEX eequ5_idx_ ON EARLIEST_EQUIVALENT5_ USING btree (appln_id);
 CREATE INDEX eequ5_sub_idx_ ON EARLIEST_EQUIVALENT5_ USING btree (subsequent_id);
 
 \echo '----------------------------------------------------------------------------------------------------------------------'
-\echo 'CREATING OTHER_SUBSEQUENT_FILINGS6 (TABLE 22/27) ...'
+\echo 'CREATING OTHER_SUBSEQUENT_FILINGS6 (TABLE 23/28) ...'
 \echo '----------------------------------------------------------------------------------------------------------------------' 
  
 -- D.2 Use information from other subsequent filings (source = 6)
@@ -685,7 +692,7 @@ CREATE INDEX other6_office_idx ON OTHER_SUBSEQUENT_FILINGS6 USING btree (patent_
 CREATE INDEX other6_year_idx ON OTHER_SUBSEQUENT_FILINGS6 USING btree (appln_filing_year); 
 
 \echo '----------------------------------------------------------------------------------------------------------------------'
-\echo 'CREATING EARLIEST_SUBSEQUENT_FILING6 (TABLE 23/27) ...'
+\echo 'CREATING EARLIEST_SUBSEQUENT_FILING6 (TABLE 25/28) ...'
 \echo '----------------------------------------------------------------------------------------------------------------------' 
  
 -- D.2.2 Select the most appropriate (i.e. earliest) subsequent filing
@@ -701,7 +708,7 @@ CREATE INDEX esub6_idx ON EARLIEST_SUBSEQUENT_FILING6 USING btree (appln_id);
 CREATE INDEX esub6_sub_idx ON EARLIEST_SUBSEQUENT_FILING6 USING btree (subsequent_id);
 
 \echo '----------------------------------------------------------------------------------------------------------------------'
-\echo 'CREATING EARLIEST_SUBSEQUENT_FILING6_ (TABLE 24/27) ...'
+\echo 'CREATING EARLIEST_SUBSEQUENT_FILING6_ (TABLE 25/28) ...'
 \echo '----------------------------------------------------------------------------------------------------------------------' 
  
 -- deal with cases where we have several earliest equivalents (select only one)
@@ -718,7 +725,7 @@ CREATE INDEX esub6_idx_ ON EARLIEST_SUBSEQUENT_FILING6_ USING btree (appln_id);
 CREATE INDEX esub6_sub_idx_ ON EARLIEST_SUBSEQUENT_FILING6_ USING btree (subsequent_id);
 
 \echo '----------------------------------------------------------------------------------------------------------------------'
-\echo 'CREATING TABLE_APP (TABLE 25/27) ...'
+\echo 'CREATING TABLE_APP (TABLE 26/28) ...'
 \echo '----------------------------------------------------------------------------------------------------------------------' 
  
 -- table containing the information on priority filings and country information if available for priority filing
@@ -730,7 +737,7 @@ CREATE INDEX TABLE_APP_APPLN_ID ON TABLE_APP USING btree (appln_id);
 CREATE INDEX TABLE_APP_PERSON_ID ON TABLE_APP USING btree (person_id);
 
 \echo '----------------------------------------------------------------------------------------------------------------------'
-\echo 'CREATING TABLE_TO_BE_FILLED_APP (TABLE 26/27) ...'
+\echo 'CREATING TABLE_TO_BE_FILLED_APP (TABLE 27/28) ...'
 \echo '----------------------------------------------------------------------------------------------------------------------' 
  
 DROP TABLE IF EXISTS TABLE_TO_BE_FILLED_APP;
@@ -941,7 +948,7 @@ WHERE patent_office NOT IN ('EP', 'AP', 'EA', 'GC', 'OA', 'WO')
 ) AS t_  ;
 
 \echo '----------------------------------------------------------------------------------------------------------------------'
-\echo 'CREATING PF_APP_PERS_CTRY_ALL (TABLE 27/27) ...'
+\echo 'CREATING PF_APP_PERS_CTRY_ALL (TABLE 28/28) ...'
 \echo '----------------------------------------------------------------------------------------------------------------------' 
  
 -- Table with location information from all possible sources
@@ -974,12 +981,16 @@ SELECT DISTINCT appln_id, patent_office, appln_filing_date, appln_filing_year FR
 CREATE INDEX PF_APP_PERS_CTRY_ALL_APPLN_ID ON PF_APP_PERS_CTRY_ALL(appln_id);
 CREATE INDEX PF_APP_PERS_CTRY_ALL_PERS_ID ON PF_APP_PERS_CTRY_ALL(person_id);
 CREATE INDEX PF_APP_PERS_CTRY_ALL_YEAR ON PF_APP_PERS_CTRY_ALL(priority_year);
- 
-ALTER TABLE PF_APP_PERS_CTRY_ALL ADD COLUMN lastupdate TIMESTAMP; 
+
+\echo '----------------------------------------------------------------------------------------------------------------------'
+\echo '-----ADD `UPDATE` TIMESTAMP (ALTER 1/2) ...'
+\echo '----------------------------------------------------------------------------------------------------------------------' 
+
+ ALTER TABLE PF_APP_PERS_CTRY_ALL ADD COLUMN lastupdate TIMESTAMP; 
 UPDATE PF_APP_PERS_CTRY_ALL SET lastupdate = CURRENT_TIMESTAMP;  
  
 \echo '----------------------------------------------------------------------------------------------------------------------'
-\echo '-----UPDATING COUNTRY NAMES IN PF_APP_PERS_CTRY_ALL ...'
+\echo '-----ADD COUNTRY NAMES (ALTER 2/2) ...'
 \echo '----------------------------------------------------------------------------------------------------------------------' 
  
 ALTER TABLE pf_app_pers_ctry_all ADD COLUMN country VARCHAR; 
@@ -1033,14 +1044,12 @@ WHEN ctry_code ='LT' THEN 'Lithuania'
 WHEN ctry_code ='LI' THEN 'Liechtenstein'
 WHEN ctry_code ='HK' THEN 'Hong Kong'
 END  ;
- 
-CREATE INDEX PF_APP_PERS_CTRY_ALL_COUNTRY ON PF_APP_PERS_CTRY_ALL(country);
 
 \echo '----------------------------------------------------------------------------------------------------------------------'
-\echo 'VACUUMING ...'
+\echo '-----CREATE COUNTRY INDEX ...'
 \echo '----------------------------------------------------------------------------------------------------------------------' 
-
-VACUUM ANALYZE PF_APP_PERS_CTRY_ALL;
+ 
+CREATE INDEX PF_APP_PERS_CTRY_ALL_COUNTRY ON PF_APP_PERS_CTRY_ALL(country);
 
 \echo '----------------------------------------------------------------------------------------------------------------------'
 \echo '-----JOB DONE!'

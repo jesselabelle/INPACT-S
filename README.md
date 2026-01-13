@@ -4,20 +4,22 @@
 Jesse LaBelle, Inmaculada Martínez-Zarzoso, Ana Maria Santacreu, and Yoto Yotov
 
 ### Paper Citation
+Any use of this dataset should be accompanied with citation of the following paper:
+
 LaBelle, Jesse and Martinez-Zarzoso, Inmaculada and Santacreu, Ana Maria Maria and Yotov, Yoto, Cross-Border Patenting, Globalization, and Development (2023). CESifo Working Paper No. 10850, Available at SSRN: https://ssrn.com/abstract=4676768 or http://dx.doi.org/10.2139/ssrn.4676768
 
 ### Dataset Access
-https://sites.google.com/uji.es/inma-martinez-zarzoso/home/datasets
+To access the latest version of this dataset please visit: https://sites.google.com/uji.es/inma-martinez-zarzoso/home/datasets. Past versions of the dataset are available upon request.
 
 ---
 
 ## 1. Overview
-This repository contains the replication package for constructing the INPACT-S and INPACT-S-Citations datasets. The workflow integrates PostgreSQL for high-performance processing of raw PATSTAT data and Stata for fractional counting and bilateral flow construction.
+This repository contains the replication package for constructing the INPACT-S. The workflow integrates PostgreSQL for high-performance processing of raw PATSTAT data and Stata for fractional counting, missing country imputation and bilateral flow construction.
 
 ## 2. Prerequisites
 * PostgreSQL: Installed and configured (scripts optimized for Windows psql).
-* Stata: Version 15 or higher.
-* Hardware: 16GB RAM minimum. SQL scripts are tuned to use 1GB work_mem and 2047MB maintenance_work_mem to stay within Windows memory limits.
+* Stata: Version 16 or higher required.
+* Hardware: STATA code is extremely RAM intensive and makes extensive use of frames. This code was written and run using Northwestern Universities Quest high-performance computing cluster. Authors recommend using HPC clusters if possible to avoid issues with RAM/Disk memory and optimize performance. SQL scripts are tuned to use 1GB work_mem and 2047MB maintenance_work_mem to stay within Windows memory limits and can be run on a standard work laptop.
 
 ## 3. Repository Structure
 The repository is organized to maintain a clear separation between source code and generated data:
@@ -27,12 +29,13 @@ The repository is organized to maintain a clear separation between source code a
 * data/raw/crosswalks/: (Included) Essential mapping files (WIPO ST.3, Regional Authorities, etc.).
 * data/sql_output/: (User Created) Target directory for all SQL exports.
 
+Note: Some necessary but publicly available data is not included in this repository. In such cases, detailed information on how and where to find this data is included.
 ---
 
 ## 4. Replication Steps
 
 ### Phase 1: PostgreSQL Extraction
-1. Ensure your raw PATSTAT CSV files are placed in data/raw/patstat_[vintage]/.
+1. Ensure your raw PATSTAT CSV files are grouped by tls and placed in data/raw/patstat_[vintage]/.
 2. Open code/sql/0_master_clean_patstat.sql and set your :patstat_schema to match your folder name.
 3. Run the master SQL script via command line:
    psql -U postgres -f code/sql/0_master_clean_patstat.sql
@@ -44,8 +47,7 @@ The repository is organized to maintain a clear separation between source code a
 2. Run code/stata/0 -- Master For Public Folder.do.
 3. The master script will automatically handle the execution of:
    * 1 -- deRassenfosse Imputation.do: Cleans and fills missing country codes.
-   * 2 -- Bilateral Patent Flows Construction.do: Constructs the final dataset using fractional counting.
-   * 3 -- OECD Comparison
+   * 2 -- Bilateral Patent Flows Construction.do: Constructs the final dataset using fractional counting and all methods described in the paper.
 
 ---
 

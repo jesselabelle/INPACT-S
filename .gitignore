@@ -6,6 +6,7 @@ Thumbs.db
 # --- Stata Archive ---
 # Ignore the archive folder completely
 code/stata/archive/
+code/stata/authors_only/
 
 # --- Data Folder Rules ---
 
@@ -23,3 +24,10 @@ data/raw/crosswalks/*
 # 4. Finally, un-ignore ONLY the specific files you want to keep
 !data/raw/crosswalks/wipo_st3.csv
 !data/raw/crosswalks/regional_authorities.xlsx
+
+# 5. Allow Git to enter "datasets" (but ignore its contents by default)
+!datasets/
+datasets/*
+
+# 6. Finally, un-ignore ONLY the specific files you want to keep
+!datasets/README.txt

@@ -9,7 +9,7 @@ SET search_path TO :patstat_schema, public;
 
 -- 2. Performance Optimization (Tuned for 16GB RAM)
 SET work_mem = '1GB';
-SET maintenance_work_mem = '2GB';
+SET maintenance_work_mem = '2047MB';
 
 \echo '----------------------------------------------------------------------------------------------------------------------'
 \echo 'PART 1: FAMILIES ...'
@@ -20,19 +20,19 @@ CREATE TEMP TABLE families_temp AS
 SELECT
     a.appln_id,
     a.earliest_pat_publn_id,
+	a.docdb_family_id,
     p.publn_nr,
     p.publn_auth,
-    p.publn_kind,
-    p.docdb_family_id
+    p.publn_kind
 FROM tls201_appln      AS a
 JOIN tls211_pat_publn  AS p ON a.appln_id = p.appln_id
 GROUP BY
     a.appln_id,
     a.earliest_pat_publn_id,
+	a.docdb_family_id,
     p.publn_nr,
     p.publn_auth,
-    p.publn_kind,
-    p.docdb_family_id;
+    p.publn_kind;
 
 -- EXECUTE EXPORT (families.csv)
 \pset format unaligned \pset tuples_only on
