@@ -1,0 +1,60 @@
+
+==========================================================================
+REPLICABILITY VERIFICATION REPORT
+Comparison: GitHub Code Output (New) vs. Original Public Data (Old)
+Goal: Prove that differences are negligible for regression analysis.
+==========================================================================
+
+PROOF 1: Correlation Analysis
+Logic: If datasets are consistent, correlation should be nearly 1.0000
+(obs=1,095,381)
+
+             | patent~w patent~d
+-------------+------------------
+ patents_new |   1.0000
+ patents_old |   1.0000   1.0000
+
+
+--------------------------------------------------------------------------
+PROOF 2: Magnitude of Differences
+Logic: The mean difference should be close to 0.00.
+
+                            diff
+-------------------------------------------------------------
+      Percentiles      Smallest
+ 1%    -.1520691      -210.9814
+ 5%    -.0000233       -194.845
+10%            0      -180.3848       Obs           1,095,381
+25%            0      -171.9835       Sum of wgt.   1,095,381
+
+50%            0                      Mean           -.000782
+                        Largest       Std. dev.      1.173808
+75%            0       220.4757
+90%            0       247.0855       Variance       1.377824
+95%            0       271.8339       Skewness       42.88077
+99%     .1593838       286.4559       Kurtosis       18887.19
+
+--------------------------------------------------------------------------
+PROOF 3: Bivariate Regression Check
+Logic: Regressing New on Old should yield Coef = 1, Cons = 0, R-squared = 1.
+
+      Source |       SS           df       MS      Number of obs   = 1,095,381
+-------------+----------------------------------   F(1, 1095379)   >  99999.00
+       Model |  1.0536e+12         1  1.0536e+12   Prob > F        =    0.0000
+    Residual |  1491631.68 1,095,379  1.36174938   R-squared       =    1.0000
+-------------+----------------------------------   Adj R-squared   =    1.0000
+       Total |  1.0536e+12 1,095,380  961868.476   Root MSE        =    1.1669
+
+------------------------------------------------------------------------------
+ patents_new | Coefficient  Std. err.      t    P>|t|     [95% conf. interval]
+-------------+----------------------------------------------------------------
+ patents_old |   .9998707   1.14e-06  8.8e+05   0.000     .9998685     .999873
+       _cons |   .0050905   .0011162     4.56   0.000     .0029028    .0072781
+------------------------------------------------------------------------------
+
+--------------------------------------------------------------------------
+PROOF 4: Impact Summary
+Total Observations Compared: 1095381
+Observations with ANY variance: 90579 (8.27%)
+CONCLUSION: Minor variances detected. Review summary stats above.
+==========================================================================
