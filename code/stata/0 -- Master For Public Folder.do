@@ -1,6 +1,6 @@
 /*-------------------------------------------------------------------------
 Title: Master
-Authors: Jesse LaBelle, Inmaculada Marti­nez-Zarzoso, Ana Maria Santacreu, and Yoto Yotov
+Authors: Jesse LaBelle, Inmaculada Martinez-Zarzoso, Ana Maria Santacreu, and Yoto Yotov
 Purpose: Run all scripts to reproduce INPACIT-S and INPACIT-S-Citations
 
 Directory Structure Assumption:
@@ -32,18 +32,40 @@ quietly {
 	global code     	"$root/code/stata"
 	global output 		"$root/datasets"
 	global robustness 	"$output/robustness"
+	global checks		"$output/checks"
+	global intermediate	"$data/intermediate"
 	
 	cd "$root"
 
 	* SQL SOURCE DATA FOLDER (Determines Major Version V#) 
 	* V1 uses PATSTAT 2021 Autumn Ed.
 	* V2 uses PATSTAT 2024 Spring Ed.
-	global sql_subfolder "patstat_2024spring" 
+	global sql_subfolder 	"patstat_2024spring" 
 
 	* BRIDGE FILE TOGGLE (Determines Minor Version _#)
 	* Set to 1 to use 'first_and_subsequent_filings.csv' (New Method)
 	* Set to 0 to use Standard Method (Original)
 	global method_version 1
+	
+	/* MISSING IPC FILE TOGGLE (Determines Minor Version _#)
+	   Set to 1 to use 'applications_undefined_tech_class_`t'.csv' (Missing tech class method)
+	   Set to 0 to ignore these patents
+	   
+	   The public V2.2 uses both the above bridge method and this method so this is coded
+	   to use both (V2.2) just Bridge (V2.1) or neither (V2.0). There exists no version that
+	   runs only this method, though creating such a version for person use is possible */
+	global missing_ipc 1
+	
+	if "$method_version" == "1" & "$missing_ipc" == "1" {
+		global overall_subversion 2
+	}
+	else if "$method_version" == "1" & "$missing_ipc" == "0" {
+		global overall_subversion 1
+	}
+	else {
+		global overall_subversion 0
+	}
+	
 	
 	/* IMPORTANT NOTE: One of the imputation processes relies on WIPO data that is 
 	   being updated frequently by them. Using a different version may result in 
@@ -55,6 +77,7 @@ quietly {
 		Original Data was downloaded in early 2022. Data for V2 was downloaded 11/2025 */
 		
 	global wipo_share_data "$data/raw/crosswalks/patent_1 - Total patent applications (direct and PCT national phase entries)_Count by filing office and applicant origin_1980_2023"
+	global wipo_share_data_granted "$data/raw/crosswalks/patent_2 - Total patent grants (direct and PCT national phase entries)_Count by filing office and applicant's origin_1980_2024"
 
 	* -------------------------------------------------------------------------
 	* END USER CONFIGURATION
@@ -64,13 +87,15 @@ quietly {
 
 	* Create Output Folders
 	capture mkdir "$output"
+	capture mkdir "$intermediate"
+	capture mkdir "$checks"
 	capture mkdir "$robustness"
 	capture mkdir "$robustness/applt"
 	capture mkdir "$robustness/invt"
 
 	/* ------------------------------------------------------------------------- 
 	   OPTIONAL USER CONFIGURATION (DEFAULT IS SET TO THE SETTINGS USED TO MAKE
-	   INPACIT-S V2.1)
+	   INPACIT-S V2.2)
 	------------------------------------------------------------------------- */
 
 	* Years for processing applications (these are determined by the SQL codes)
@@ -78,11 +103,14 @@ quietly {
 	global years 1980_1984 1985_1989 1990_1994 1995_1999 2000_2004 2005_2009 2010_2014 2015_2019 2020_2024
 
 	* Person types
-	global types applt //invt
+	global types applt invt
 
 	* Priority Year Cutoffs
 	global min_priority_year 1940
 	global max_priority_year 2025
+	
+	* Whether or not to rectangularize the data for script 7 on
+	global rectangularize 1
 
 	* NAMING LOGIC
 
@@ -90,7 +118,7 @@ quietly {
 	if strpos("$sql_subfolder", "2021") {
 	    global v_major "V1"
 	}
-	else if strpos("$sql_subfolder", "2024") | strpos("$sql_subfolder", "2025") {
+	else if strpos("$sql_subfolder", "2024") {
 	    global v_major "V2"
 	}
 	else { // Users can add future versions here
@@ -98,7 +126,7 @@ quietly {
 	}
 
 	* Calculate Minor Version (_#) from Bridge Toggle
-	global v_minor = $method_version
+	global v_minor = $overall_subversion
 
 	* Construct Final Suffix
 	global version_suffix "_${v_major}_${v_minor}"
@@ -120,8 +148,7 @@ quietly {
 	noisily run "$code/1 -- deRassenfosse Imputation.do"
 
 	* Step 2: Construct Flows (with Robustness Loops)
-	* This loops through variations of the bilateral flow construction for
-	* robustness
+	* This loops through variations of the bilateral flow construction for robustness
 
 	foreach dr in 0 1 {
 		foreach ra in 0 1 {
@@ -147,8 +174,4 @@ quietly {
 			}
 		}
 	}
-    
-	noisily display _n as text "{hline 60}"
-	noisily display as result "MASTER EXECUTION COMPLETE"
-	noisily display as text "{hline 60}"
 }

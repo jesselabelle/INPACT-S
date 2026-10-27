@@ -32,3 +32,10 @@ datasets/*
 # 6. Finally, un-ignore ONLY the specific files you want to keep
 !datasets/README.txt
 !datasets/Discrepancies in INPACT-S V1.0 Using New Code.log
+
+# --- Paper Replication and Local Audit Material ---
+# The paper replication package is maintained in a separate repository.
+code/stata/replication/
+replication_audit/
+replication_output/
+tmp/

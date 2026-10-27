@@ -21,7 +21,7 @@
 
  4. RUN:
     - Open your psql terminal and sign in
-    - Navigate to project root: \cd "path/to/project_root"
+    - Navigate to project root: cd "path/to/project_root"
     - Run: \i code/sql/0_master_clean_patstat.sql
 ******************************************************************************************/
 
@@ -46,6 +46,9 @@ SELECT 'data/raw/' || :'patstat_schema' AS srcdir \gset
 
 SELECT 'data/sql_output/' || :'patstat_schema' AS outdir_sql \gset
 
+-- V2.2 supplement for applications without an IPC classification.
+SELECT :'outdir_sql' || '/lost_apps' AS outdir_lost_apps \gset
+
 -----------------------------
 -- ECHO CONFIG
 -----------------------------
@@ -65,6 +68,7 @@ SELECT 'data/sql_output/' || :'patstat_schema' AS outdir_sql \gset
 \pset tuples_only on
 \o _init_root.bat
 SELECT format('mkdir "%s" 2>NUL', :'outdir_sql');
+SELECT format('mkdir "%s" 2>NUL', :'outdir_lost_apps');
 \o
 \pset format aligned 
 \pset tuples_only off
@@ -101,6 +105,7 @@ SELECT format('mkdir "%s" 2>NUL', :'outdir_sql');
 \echo '======================================================================================================================'
 \echo 'STEP 4: Building applications-by-applicant...'
 \echo '======================================================================================================================'
+
 \i 'code/sql/04_build_applications_by_applt.sql'
 
 -----------------------------
@@ -120,10 +125,18 @@ SELECT format('mkdir "%s" 2>NUL', :'outdir_sql');
 \i 'code/sql/06_build_applications_by_invt.sql'
 
 -----------------------------
--- STEP 7: BUILD CITATIONS & FAMILIES DATASETS
+-- STEP 7: BUILD V2.2 NO-IPC SUPPLEMENT
 -----------------------------
 \echo '======================================================================================================================'
-\echo 'STEP 7: Building citations and families datasets ...'
+\echo 'STEP 7: Recovering applications without an IPC classification ...'
+\echo '======================================================================================================================'
+\i 'code/sql/09_applications_lost_due_to_ipc.sql'
+
+-----------------------------
+-- STEP 8: BUILD CITATIONS & FAMILIES DATASETS
+-----------------------------
+\echo '======================================================================================================================'
+\echo 'STEP 8: Building citations and families datasets ...'
 \echo '======================================================================================================================'
 \i 'code/sql/07_build_citations_and_families.sql'
 

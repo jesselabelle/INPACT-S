@@ -1,5 +1,14 @@
 # INPACT-S: Cross-Border Patenting and Citation Datasets
 
+> **Current release: INPACT-S V2.2**  
+> **Dataset release last updated: June 2026**  
+> **PATSTAT source vintage: Spring 2024**
+
+This repository contains the **data-construction code** for INPACT-S. It is
+separate from the paper's empirical replication package. See
+[VERSION_HISTORY.md](VERSION_HISTORY.md) for a precise description of the
+differences among V1.0, V2.0, V2.1, and V2.2.
+
 ### Authors
 Jesse LaBelle, Inmaculada Martínez-Zarzoso, Ana Maria Santacreu, and Yoto Yotov
 
@@ -14,7 +23,10 @@ To access the latest version of this dataset please visit: https://sites.google.
 ---
 
 ## 1. Overview
-This repository contains the replication package for constructing the INPACT-S. The workflow integrates PostgreSQL for high-performance processing of raw PATSTAT data and Stata for fractional counting, missing country imputation and bilateral flow construction.
+This repository contains the code used to construct INPACT-S. The workflow
+integrates PostgreSQL for high-performance processing of raw PATSTAT data and
+Stata for fractional counting, missing-country imputation, and bilateral-flow
+construction. The default configuration reproduces **INPACT-S V2.2**.
 
 ## 2. Prerequisites
 * PostgreSQL: Installed and configured (scripts optimized for Windows psql).
